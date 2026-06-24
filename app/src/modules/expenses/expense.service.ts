@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { withTransaction } from '../../db/pool';
 import { Errors } from '../../http/errors';
-import { AuthUser, ExpenseStatus } from '../../types';
+import { AuthUser, ExpenseRequest, ExpenseStatus } from '../../types';
 import { hasPermission } from '../../rbac/permissions';
 import { getIdempotentResponse, saveIdempotentResponse } from '../../http/idempotency';
 import * as repo from './expense.repo';
@@ -299,6 +299,20 @@ export async function history(user: AuthUser, id: string) {
   if (!expense) throw Errors.notFound('Expense not found');
   await assertCanView(user, expense.requester_id);
   return getHistory(user.org_id, 'expense', id);
+}
+
+/**
+ * Loads an expense and asserts the caller may view it (used by the attachments
+ * module so bill access reuses the exact same visibility rules as the expense).
+ */
+export async function assertCanViewExpense(
+  user: AuthUser,
+  id: string
+): Promise<ExpenseRequest> {
+  const expense = await repo.getById(user.org_id, id);
+  if (!expense) throw Errors.notFound('Expense not found');
+  await assertCanView(user, expense.requester_id);
+  return expense;
 }
 
 async function assertCanView(user: AuthUser, requesterId: string): Promise<void> {

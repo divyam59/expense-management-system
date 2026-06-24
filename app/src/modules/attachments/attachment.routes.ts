@@ -4,6 +4,7 @@ import { asyncHandler } from '../../http/asyncHandler';
 import { authenticate } from '../../auth/middleware';
 import { config } from '../../config';
 import { Errors } from '../../http/errors';
+import * as service from './attachment.service';
 
 export const attachmentRouter = Router();
 
@@ -30,5 +31,26 @@ attachmentRouter.post(
       expiresInSeconds: 900,
       note: 'MOCK presigned URL (no real S3 in prototype)'
     });
+  })
+);
+
+/**
+ * Streams a stored bill back to an authorized viewer. Bytes come from the
+ * storage layer (local disk by default; S3 in production), never served as a
+ * public static file — every download is authenticated and tenant-scoped.
+ */
+attachmentRouter.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const { buffer, contentType, filename } = await service.download(
+      req.user!,
+      req.params.id
+    );
+    res.setHeader('Content-Type', contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(filename)}"`
+    );
+    res.send(buffer);
   })
 );

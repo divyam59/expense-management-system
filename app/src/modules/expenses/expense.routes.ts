@@ -3,6 +3,8 @@ import { asyncHandler } from '../../http/asyncHandler';
 import { authenticate, requirePermission } from '../../auth/middleware';
 import * as service from './expense.service';
 import * as stepRepo from '../workflow/approval.repo';
+import * as attachmentService from '../attachments/attachment.service';
+import { billUpload } from '../attachments/attachment.upload';
 
 export const expenseRouter = Router();
 
@@ -80,6 +82,24 @@ expenseRouter.get(
   '/:id/history',
   asyncHandler(async (req, res) => {
     res.json(await service.history(req.user!, req.params.id));
+  })
+);
+
+// Bill attachments (receipts/invoices) for an expense.
+expenseRouter.post(
+  '/:id/attachments',
+  billUpload,
+  asyncHandler(async (req, res) => {
+    res
+      .status(201)
+      .json(await attachmentService.uploadBill(req.user!, req.params.id, req.file));
+  })
+);
+
+expenseRouter.get(
+  '/:id/attachments',
+  asyncHandler(async (req, res) => {
+    res.json(await attachmentService.listForExpense(req.user!, req.params.id));
   })
 );
 

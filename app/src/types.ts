@@ -65,6 +65,18 @@ export interface ExpenseRequest {
   updated_at: string;
 }
 
+export interface Attachment {
+  id: string;
+  org_id: string;
+  expense_id: string | null;
+  s3_key: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
 export interface ApprovalStep {
   id: string;
   org_id: string;

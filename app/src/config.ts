@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import os from 'os';
+import path from 'path';
 
 dotenv.config();
 
@@ -20,7 +22,23 @@ export const config = {
   jwtRefreshTtl: parseInt(process.env.JWT_REFRESH_TTL || '604800', 10),
   auditS3ShippingEnabled: process.env.AUDIT_S3_SHIPPING_ENABLED === 'true',
   auditS3Bucket: process.env.AUDIT_S3_BUCKET || 'ems-audit-logs',
-  attachmentsS3Bucket: process.env.ATTACHMENTS_S3_BUCKET || 'ems-attachments'
+  // Attachments / bill uploads.
+  // `local` = store bytes on the local filesystem (default, used in dev/tests).
+  // `s3`    = documented production path (AWS S3) — see storage/storage.ts.
+  attachmentsS3Bucket: process.env.ATTACHMENTS_S3_BUCKET || 'ems-attachments',
+  storageDriver: (process.env.STORAGE_DRIVER || 'local') as 'local' | 's3',
+  // Tests write to a throwaway temp dir so the repo stays clean.
+  uploadsDir: isTest
+    ? path.join(os.tmpdir(), 'ems-test-uploads')
+    : process.env.UPLOADS_DIR || path.join(process.cwd(), 'var', 'uploads'),
+  maxUploadBytes: parseInt(process.env.MAX_UPLOAD_MB || '5', 10) * 1024 * 1024,
+  allowedUploadTypes: [
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif',
+    'application/pdf'
+  ]
 };
 
 export type Config = typeof config;

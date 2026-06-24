@@ -4,7 +4,27 @@ import { runMigrations } from './migrate';
 import { hashPassword } from '../auth/password';
 import { AuthUser, Role } from '../types';
 import * as expenseService from '../modules/expenses/expense.service';
+import * as attachmentService from '../modules/attachments/attachment.service';
 import { seedDefaults as seedCategories } from '../modules/categories/category.service';
+
+// A tiny valid PNG used to demonstrate the bill-upload feature in seeded data.
+const SAMPLE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64'
+);
+
+async function attachSampleBill(
+  user: AuthUser,
+  expenseId: string,
+  filename: string
+): Promise<void> {
+  await attachmentService.uploadBill(user, expenseId, {
+    originalname: filename,
+    mimetype: 'image/png',
+    size: SAMPLE_PNG.length,
+    buffer: SAMPLE_PNG
+  });
+}
 
 async function truncateAll(): Promise<void> {
   await query(`TRUNCATE idempotency_keys, notifications, audit_logs, approval_steps,
@@ -112,6 +132,7 @@ async function seed(): Promise<void> {
     currency: 'INR'
   });
   await expenseService.submitExpense(arjun, e3.id);
+  await attachSampleBill(arjun, e3.id, 'saas-invoice.png');
   await expenseService.approveExpense(manager, e3.id, 'Needed for team');
 
   // Rejected example
@@ -142,6 +163,7 @@ async function seed(): Promise<void> {
     amount: 4500,
     currency: 'INR'
   });
+  await attachSampleBill(riya, e6.id, 'client-dinner-receipt.png');
   await expenseService.submitExpense(riya, e6.id);
 
   // ---- Org 2: Globex (multi-tenancy isolation demo) ----

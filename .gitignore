@@ -5,3 +5,6 @@ coverage/
 *.log
 .DS_Store
 .tech-doc.tmp.html
+# Locally stored bill uploads (object storage stand-in)
+var/
+app/var/

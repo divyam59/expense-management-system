@@ -17,7 +17,7 @@ screenshot-by-screenshot API + UI reference, see
 project-ems/
   app/                 the application (Node + TypeScript + Express + Postgres)
     src/               source (see "Code layout" below)
-    tests/             119 unit + integration tests (run against real Postgres)
+    tests/             127 unit + integration tests (run against real Postgres)
     public/            single-page UI (vanilla JS + Chart.js)
     scripts/           UI screenshot + PDF generation helpers
     README.md          how to set up, run, test; API table; caveats
@@ -50,7 +50,7 @@ the screenshots, and the original brief are archived in
 - **Immutable audit trail** — every change written append-only in the *same transaction* as the change.
 - **Notifications** — in-app, generated on workflow events.
 - **Observability** — `/metrics` (Prometheus) + analytics dashboard (spend, status, category, SLA, audit volume).
-- **Attachments** — mock S3 presigned-URL flow.
+- **Bill uploads** — attach a receipt/invoice (image or PDF) to an expense; bytes are stored through a `BlobStorage` abstraction (local disk now, S3-ready), metadata in Postgres, with authenticated, tenant-scoped download. A mock S3 presign endpoint documents the direct-to-bucket alternative.
 
 ---
 
@@ -90,6 +90,7 @@ timers, OIDC, K8s/IaC) is described in the archived design docs.
 |---|---|
 | `config.ts` | env-driven config |
 | `db/` | pool, `schema.sql`, migrate, seed |
+| `storage/` | `BlobStorage` interface + `LocalDiskStorage` (bill bytes; S3-ready) |
 | `auth/` | jwt (access), `refreshToken.ts` (rotating refresh), password, middleware |
 | `rbac/` | role → permission map |
 | `http/` | app factory, errors, async handler, idempotency |
@@ -108,9 +109,11 @@ timers, OIDC, K8s/IaC) is described in the archived design docs.
 
 ## Deliberately deferred (documented, not built)
 
-Real S3/OCR/email, live FX, SLA auto-escalation scheduler, company-paid
-tolerance re-approval, sharding/replicas/multi-AZ, RLS enablement. See the
-archived design docs and the README caveats for the production approach.
+Real S3 (bill bytes are stored locally today via the `BlobStorage` driver — S3
+is a drop-in implementation away), OCR/email, live FX, SLA auto-escalation
+scheduler, company-paid tolerance re-approval, sharding/replicas/multi-AZ, RLS
+enablement. See the archived design docs and the README caveats for the
+production approach.
 
 ---
 
@@ -123,7 +126,7 @@ cp .env.example .env
 createdb ems
 npm run setup     # migrate + seed sample data
 npm run dev       # http://localhost:4000
-npm test          # 119 tests against ems_test (also enforced in CI)
+npm test          # 127 tests against ems_test (also enforced in CI)
 ```
 
 Full setup, sample logins, API table and caveats are in

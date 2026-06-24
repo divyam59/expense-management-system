@@ -27,7 +27,9 @@ what is stubbed or documented as the production path.
 | Idempotency | ✅ Real | Keyed dedupe of retried money/state actions |
 | Audit trail | ✅ Real | Append-only, written in the same txn as the change |
 | Multi-currency | ⚠️ Partial | Conversion + stored `fx_rate` real; **FX rates are static** |
-| Attachments / S3 | ❌ Mocked | `/attachments/presign` returns a fake URL |
+| Bill uploads (image/PDF) | ✅ Real | Multipart upload → bytes persisted via a storage driver; metadata in Postgres; authenticated, tenant-scoped download |
+| Object storage backend | ⚙️ Local now / S3 documented | `LocalDiskStorage` is the default driver; `BlobStorage` interface is ready to swap in S3 |
+| S3 presign (direct-to-bucket) | ❌ Mocked | `/attachments/presign` returns a fake URL — the documented production alternative to API-proxied uploads |
 | Audit S3 shipping | ❌ Mocked | Flag-gated; writes to an in-memory sink |
 | Redis cache | ⚙️ Optional | In-memory fallback by default; Redis slot wired |
 | SLA escalation | ❌ Not built | `sla_due_at` stored & surfaced; no scheduler |
@@ -91,6 +93,9 @@ Seeded approval policy (Acme):
 3. Create a ₹20,000 expense as Riya → submit → manager approves → **Neha (finance)** approves → status `approved`.
 4. Login as **Neha** → **Dashboard** → see charts populated from real data.
 5. Open any expense → see the **approval chain** + **History (audit trail)**.
+6. Open one of your own editable expenses → **Bills** tab → **upload a receipt**
+   (image or PDF) → it appears with a thumbnail; click **View** to preview it.
+   (Seed data already attaches a sample bill to a couple of expenses.)
 
 ### B) Via curl
 ```bash
@@ -122,7 +127,7 @@ npm test          # run all tests (uses the ems_test database)
 npm run test:cov  # run with coverage report
 npm run test:watch
 ```
-- **119 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
+- **127 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
   ~94% functions, ~72% branches**. High coverage on the core flows; the
   uncovered branches are mostly defensive guards (null fallbacks, unreachable
   error paths) — branch % is deliberately not chased to 100%.
@@ -160,8 +165,11 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | POST | `/expenses/:id/reject` | expense:approve | Reject (reason required) |
 | POST | `/expenses/:id/withdraw` | requester | Withdraw |
 | GET | `/expenses/:id/history` | owner/mgr/finance | Audit trail |
+| POST | `/expenses/:id/attachments` | requester | **Upload a bill** (multipart `file`; image or PDF, ≤5MB) while editable |
+| GET | `/expenses/:id/attachments` | owner/mgr/finance | List a bill's metadata for an expense |
+| GET | `/attachments/:id` | owner/mgr/finance | Download/preview a bill (authenticated, tenant-scoped) |
 | GET | `/approvals/pending` | expense:approve | My approval queue |
-| POST | `/attachments/presign` | any | Mock S3 presigned URL |
+| POST | `/attachments/presign` | any | Mock S3 presigned URL (documented direct-to-bucket path) |
 | GET/POST/PATCH/DELETE | `/policies` | policy:manage (read: analytics:view) | Approval policy CRUD. **Only one policy is active per org** — create/activate auto-deactivates the rest; duplicate names → 409; the active policy can't be deleted (400) |
 | GET | `/categories` | any | List the org's active expense categories |
 | POST/DELETE | `/categories` | policy:manage | Add / soft-deactivate an expense category (duplicate → 409) |
@@ -197,7 +205,8 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | Audit trail | Every change logged immutably, in-txn | ✅ | `misc.test.ts › audit` |
 | Audit S3 shipping | Only ships when flag enabled | ✅ | `misc.test.ts › ships audit` |
 | Notifications | Generated on workflow events | ✅ | `misc.test.ts › notifications` |
-| Attachments | Mock presigned URL | ✅ | `misc.test.ts › attachments` |
+| Bill uploads | Upload image/PDF, list, download; type/size/permission enforced | ✅ | `attachments.test.ts` |
+| S3 presign (mock) | Mock presigned URL | ✅ | `misc.test.ts › attachments` |
 | Policy CRUD + validation | Bad ranges → 422 | ✅ | `policy.test.ts`, `branches.test.ts` |
 | Single active policy | One active policy/org; create/activate deactivates others; dup name → 409; active can't be deleted | ✅ | `policy-categories.test.ts` |
 | Expense categories | Admin-managed per-org categories (UI dropdown); dup → 409 | ✅ | `policy-categories.test.ts` |
@@ -211,8 +220,14 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 
 These are **intentional** scope cuts (see Level 2 doc §15 for the production approach):
 
-1. **S3 is mocked.** `/attachments/presign` returns a fake URL; audit S3 shipping
-   writes to an in-memory sink. No real AWS calls. Swap in the AWS SDK for prod.
+1. **Bill storage is local, not S3 (yet).** Uploaded bills are *really* stored —
+   bytes go through a `BlobStorage` abstraction whose default `LocalDiskStorage`
+   driver writes under `UPLOADS_DIR` (`var/uploads/`), with metadata in Postgres
+   and authenticated, tenant-scoped download. Production swaps in an `S3Storage`
+   implementing the same interface (the object key format is already S3-shaped).
+   The separate `/attachments/presign` endpoint (fake URL) documents the
+   alternative *direct-to-bucket* upload path. Audit S3 shipping still writes to
+   an in-memory sink.
 2. **Redis is optional / mocked in tests.** Default run uses the in-memory cache.
    A `RedisCache` slot exists in `cache.ts` to wire real Redis.
 3. **FX rates are static** (`currency.ts`), not from a live provider.
@@ -279,6 +294,7 @@ app/
     config.ts            env config
     db/                  pool, schema.sql, migrate, seed
     cache/               cache interface + in-memory impl
+    storage/             blob storage interface + local-disk impl (S3-ready)
     auth/                jwt, password, middleware
     rbac/                role → permission map
     http/                app factory, errors, asyncHandler, idempotency

@@ -124,6 +124,25 @@ const toastErr = (msg) => toast(msg, 'error');
 const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
 const pill = (s) => `<span class="pill ${s}">${s.replace('_', ' ')}</span>`;
 const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const esc = (s) =>
+  String(s ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+  );
+function fmtBytes(n) {
+  const b = Number(n || 0);
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+// Fetch a protected binary (bill) with the auth header and return an object URL.
+async function authBlobUrl(path) {
+  const res = await fetch(path, {
+    headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {}
+  });
+  if (!res.ok) throw new Error('Could not load file');
+  return URL.createObjectURL(await res.blob());
+}
 
 // ---------- Auth flows ----------
 function enterApp() {
@@ -395,10 +414,13 @@ async function showDetail(id) {
   state.openExpenseId = id;
   const e = await api(`/expenses/${id}`);
   const hist = await api(`/expenses/${id}/history`);
+  const bills = await api(`/expenses/${id}/attachments`).catch(() => []);
   const d = document.getElementById('detail');
   if (!d) return;
   const tab = state.detailTab || 'chain';
   const editable = ['draft', 'submitted', 'in_review'].includes(e.status);
+  const isOwner = !!(state.user && e.requester_id === state.user.id);
+  const canUpload = isOwner && editable;
   const actions = [];
   if (e.status === 'draft') actions.push(`<button class="green" onclick="doSubmit('${id}')">Submit</button>`);
   if (editable) actions.push(`<button onclick="toggleEdit('${id}')">Edit</button>`);
@@ -437,6 +459,34 @@ async function showDetail(id) {
           ).toLocaleString()}</span></div>`
       )
       .join('') || '<p class="muted">No history yet.</p>';
+
+  const billRows =
+    bills
+      .map((b) => {
+        const isImg = (b.content_type || '').startsWith('image/');
+        return `<div class="bill-row">
+          <div class="bill-thumb" data-att="${b.id}">${isImg ? '' : '📄'}</div>
+          <div class="bill-meta">
+            <div class="bill-name">${esc(b.filename)}</div>
+            <div class="muted small">${esc(b.content_type)} · ${fmtBytes(b.size)}</div>
+          </div>
+          <button class="ghost small" onclick="openBill('${b.id}')">View</button>
+        </div>`;
+      })
+      .join('') || '<p class="muted">No bills uploaded yet.</p>';
+
+  const uploadHtml = canUpload
+    ? `<div class="bill-upload">
+        <div class="field">
+          <label for="billFile">Attach a bill — receipt or invoice (image or PDF, max 5MB)</label>
+          <input id="billFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" />
+        </div>
+        <button class="primary" onclick="uploadBill('${id}')">Upload bill</button>
+        <p id="billErr" class="form-err"></p>
+      </div>`
+    : '';
+
+  const billsHtml = uploadHtml + `<div class="bill-list">${billRows}</div>`;
 
   d.innerHTML = `
     <div class="modal-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
@@ -490,11 +540,16 @@ async function showDetail(id) {
         <div class="tabs">
           <button class="tab ${tab === 'chain' ? 'active' : ''}" data-tab="chain" onclick="switchDetailTab('chain')">Approval chain</button>
           <button class="tab ${tab === 'history' ? 'active' : ''}" data-tab="history" onclick="switchDetailTab('history')">History</button>
+          <button class="tab ${tab === 'bills' ? 'active' : ''}" data-tab="bills" onclick="switchDetailTab('bills')">Bills${
+            bills.length ? ` (${bills.length})` : ''
+          }</button>
         </div>
-        <div id="tabChain" class="tab-pane steps ${tab === 'chain' ? '' : 'hidden'}">${chainHtml}</div>
-        <div id="tabHistory" class="tab-pane steps ${tab === 'history' ? '' : 'hidden'}">${histHtml}</div>
+        <div data-tab="chain" class="tab-pane steps ${tab === 'chain' ? '' : 'hidden'}">${chainHtml}</div>
+        <div data-tab="history" class="tab-pane steps ${tab === 'history' ? '' : 'hidden'}">${histHtml}</div>
+        <div data-tab="bills" class="tab-pane ${tab === 'bills' ? '' : 'hidden'}">${billsHtml}</div>
       </div>
     </div>`;
+  loadBillThumbs(bills);
 }
 
 function closeDetail() {
@@ -508,13 +563,68 @@ function switchDetailTab(tab) {
   document
     .querySelectorAll('#detailOverlay .tab')
     .forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-  document.getElementById('tabChain').classList.toggle('hidden', tab !== 'chain');
-  document.getElementById('tabHistory').classList.toggle('hidden', tab !== 'history');
+  document
+    .querySelectorAll('#detailOverlay .tab-pane')
+    .forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== tab));
 }
 
 function toggleEdit(id) {
   const f = document.getElementById('editForm');
   if (f) f.classList.toggle('hidden');
+}
+
+async function uploadBill(id) {
+  const err = document.getElementById('billErr');
+  if (err) err.textContent = '';
+  const input = document.getElementById('billFile');
+  const file = input && input.files && input.files[0];
+  if (!file) {
+    if (err) err.textContent = 'Choose an image or PDF first.';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`/expenses/${id}/attachments`, {
+      method: 'POST',
+      headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {},
+      body: fd
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(errMessage(data, res.status));
+    toast('Bill uploaded');
+    state.detailTab = 'bills';
+    await showDetail(id);
+  } catch (e) {
+    if (err) err.textContent = e.message;
+    else toastErr(e.message);
+  }
+}
+
+async function openBill(attId) {
+  try {
+    const url = await authBlobUrl(`/attachments/${attId}`);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    toastErr(e.message);
+  }
+}
+
+// Lazily load image bills as thumbnails (each fetch carries the auth header).
+async function loadBillThumbs(bills) {
+  for (const b of bills) {
+    if (!(b.content_type || '').startsWith('image/')) continue;
+    const el = document.querySelector(`.bill-thumb[data-att="${b.id}"]`);
+    if (!el) continue;
+    try {
+      const url = await authBlobUrl(`/attachments/${b.id}`);
+      el.style.backgroundImage = `url(${url})`;
+      el.classList.add('has-img');
+    } catch {
+      /* leave the placeholder */
+    }
+  }
 }
 
 async function saveEdit(id) {
@@ -1201,6 +1311,8 @@ window.removeCategory = removeCategory;
 window.closeDetail = closeDetail;
 window.switchDetailTab = switchDetailTab;
 window.toggleUser = toggleUser;
+window.uploadBill = uploadBill;
+window.openBill = openBill;
 
 // Esc closes the expense detail modal.
 document.addEventListener('keydown', (e) => {
