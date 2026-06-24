@@ -62,6 +62,14 @@ export async function listPolicies(orgId: string): Promise<Policy[]> {
   return res.rows;
 }
 
+export async function getById(orgId: string, id: string): Promise<Policy | null> {
+  const res = await query<Policy>('SELECT * FROM policies WHERE id=$1 AND org_id=$2', [
+    id,
+    orgId
+  ]);
+  return res.rows[0] ?? null;
+}
+
 export async function getActivePolicy(orgId: string): Promise<Policy | null> {
   const res = await query<Policy>(
     'SELECT * FROM policies WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 1',

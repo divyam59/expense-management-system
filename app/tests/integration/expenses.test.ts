@@ -104,6 +104,40 @@ describe('expense lifecycle & workflow', () => {
     expect(res.status).toBe(403);
   });
 
+  it("routes an admin's own expense to another admin, never to themselves", async () => {
+    const admin2 = await makeUser(fx.orgId, 'admin', { email: 'admin2@test.local' });
+    // Make an admin-only policy active.
+    await request(app)
+      .post('/policies')
+      .set('Authorization', bearer(fx.admin))
+      .send({ name: 'Admin only', rulesJson: { rules: [{ min: 0, max: null, levels: ['admin'] }] } })
+      .expect(201);
+
+    const draft = await request(app)
+      .post('/expenses')
+      .set('Authorization', bearer(fx.admin))
+      .send({ type: 'reimbursement', category: 'Travel', amount: 4000, currency: 'INR' });
+    const submit = await request(app)
+      .post(`/expenses/${draft.body.id}/submit`)
+      .set('Authorization', bearer(fx.admin));
+    expect(submit.status).toBe(200);
+
+    const detail = await request(app)
+      .get(`/expenses/${draft.body.id}`)
+      .set('Authorization', bearer(fx.admin));
+    const adminStep = detail.body.steps.find(
+      (s: { required_role: string }) => s.required_role === 'admin'
+    );
+    expect(adminStep.approver_id).toBe(admin2.id);
+
+    // The requester (an admin) still cannot approve their own expense.
+    const selfApprove = await request(app)
+      .post(`/expenses/${draft.body.id}/approve`)
+      .set('Authorization', bearer(fx.admin))
+      .send({ reason: 'x' });
+    expect(selfApprove.status).toBe(403);
+  });
+
   it('blocks submit when no eligible approver exists', async () => {
     // Single-manager org: the manager has no one else to approve their own
     // small expense, so submit fails fast with a clear message.

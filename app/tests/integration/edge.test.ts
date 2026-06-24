@@ -143,19 +143,19 @@ describe('expense edge cases', () => {
     expect(final.body.status).toBe('approved');
   });
 
-  it('422 submit when org has no active policy', async () => {
+  it('422 creating an expense when org has no active policy', async () => {
     const org = await makeOrg('NoPolicy');
     const mgr = await makeUser(org, 'manager', { email: 'm@np.local' });
     const emp = await makeUser(org, 'employee', { email: 'e@np.local', managerId: mgr.id });
     await makeOrgBudget(org);
-    const d = await request(app)
+    // Creation is blocked outright: no policy means the expense could never be
+    // routed, so we don't allow even a draft to exist.
+    const res = await request(app)
       .post('/expenses')
       .set('Authorization', bearer(emp))
       .send({ type: 'reimbursement', amount: 3000, currency: 'INR' });
-    const res = await request(app)
-      .post(`/expenses/${d.body.id}/submit`)
-      .set('Authorization', bearer(emp));
     expect(res.status).toBe(422);
+    expect(res.body.error.message).toMatch(/no active approval policy/i);
   });
 
   it('404 approve on missing expense', async () => {

@@ -59,6 +59,13 @@ describe('policies', () => {
       .send({ name: 'Renamed' });
     expect(upd.body.name).toBe('Renamed');
 
+    // Creating a second policy makes it active and the first inactive, so the
+    // first can be deleted (the active one is protected).
+    await request(app)
+      .post('/policies')
+      .set('Authorization', bearer(fx.finance))
+      .send({ name: 'Newer', rulesJson: { rules: [{ min: 0, max: 1000, levels: ['manager'] }] } });
+
     const del = await request(app)
       .delete(`/policies/${id}`)
       .set('Authorization', bearer(fx.finance));

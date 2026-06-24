@@ -30,6 +30,14 @@ export async function createExpense(user: AuthUser, body: unknown) {
   if (!isSupportedCurrency(parsed.data.currency)) {
     throw Errors.unprocessable(`Unsupported currency: ${parsed.data.currency}`);
   }
+  // No approval policy = no way to route this expense, so don't let it be
+  // created at all (clearer than letting a draft exist that can never be sent).
+  const activePolicy = await policyRepo.getActivePolicy(user.org_id);
+  if (!activePolicy) {
+    throw Errors.unprocessable(
+      'No active approval policy configured. An admin must create or activate a policy under "Policies" before expenses can be created.'
+    );
+  }
   const baseAmount = convert(parsed.data.amount, parsed.data.currency, BASE_CURRENCY);
   const rate = fxRate(parsed.data.currency, BASE_CURRENCY);
 

@@ -33,12 +33,15 @@ async function resolveApprover(
     if (requester.manager_id && requester.manager_id !== requester.id) {
       return requester.manager_id;
     }
-    // Fall back to any manager in the org who is not the requester.
-    const mgr = await userRepo.firstUserWithRole(orgId, 'manager');
-    return mgr && mgr.id !== requester.id ? mgr.id : null;
+    // Fall back to any *other* manager in the org (never the requester).
+    const mgr = await userRepo.firstUserWithRole(orgId, 'manager', requester.id);
+    return mgr ? mgr.id : null;
   }
-  const user = await userRepo.firstUserWithRole(orgId, role);
-  return user && user.id !== requester.id ? user.id : null;
+  // Route to any active user holding the role, excluding the requester so an
+  // approver can never be assigned to approve their own expense — even when
+  // the requester happens to be the most senior user of that role.
+  const user = await userRepo.firstUserWithRole(orgId, role, requester.id);
+  return user ? user.id : null;
 }
 
 /**

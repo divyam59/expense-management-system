@@ -17,7 +17,7 @@ screenshot-by-screenshot API + UI reference, see
 project-ems/
   app/                 the application (Node + TypeScript + Express + Postgres)
     src/               source (see "Code layout" below)
-    tests/             96 unit + integration tests (run against real Postgres)
+    tests/             119 unit + integration tests (run against real Postgres)
     public/            single-page UI (vanilla JS + Chart.js)
     scripts/           UI screenshot + PDF generation helpers
     README.md          how to set up, run, test; API table; caveats
@@ -25,6 +25,7 @@ project-ems/
     PROJECT-OVERVIEW.md      this file
     README.md                copy of the app README for convenience
     technical-documentation.pdf   full API reference + UI walkthrough (images inline)
+  .github/workflows/   CI — type-check + full test suite on every push / PR
 ```
 
 Design iteration docs (level-1 → level-2.2), the technical-doc markdown source,
@@ -39,7 +40,10 @@ the screenshots, and the original brief are archived in
 - **Tenant onboarding** — self-serve signup creates org + first admin + default policy/budget atomically.
 - **AuthN/AuthZ** — short-lived JWT access tokens; opaque, hashed, **rotating + revocable refresh tokens** (reuse detection); RBAC (employee/manager/finance/admin) enforced in middleware.
 - **Expense lifecycle** — draft → in_review → approved/rejected/withdrawn; two types (reimbursement, company-paid); edit re-evaluates the chain.
-- **Configurable approval workflow** — data-driven policy (amount range → ordered approver roles), **versioned and snapshotted at submit** so in-flight expenses are immune to later policy edits.
+- **Configurable approval workflow** — data-driven policy (amount range → ordered approver roles), **versioned and snapshotted at submit** so in-flight expenses are immune to later policy edits. **Stages run sequentially** (the next approver is notified only once the previous level approves; a rejection ends the chain).
+- **Single active policy + categories** — exactly one approval policy is active per org (create/activate auto-deactivates the rest, built via a visual rule builder — no JSON); admins manage the org's expense-category list that drives the expense form dropdown.
+- **Safe approver routing** — an expense never routes to its own author; if no other eligible approver exists for a level, submission is blocked. Expenses can't be created at all until the org has an active policy.
+- **User lifecycle** — admins add and **deactivate/reactivate** users (can't deactivate yourself or the last active admin); inactive users can't log in or be assigned as approvers.
 - **Concurrency-safe decisions** — every state transition takes a `SELECT … FOR UPDATE` row lock; idempotency keys dedupe retries.
 - **Budgets** — per-user / per-org daily & monthly limits enforced at submit.
 - **Multi-currency** — convert to base currency, store the `fx_rate` (static rates).
@@ -90,7 +94,7 @@ timers, OIDC, K8s/IaC) is described in the archived design docs.
 | `rbac/` | role → permission map |
 | `http/` | app factory, errors, async handler, idempotency |
 | `metrics/` | in-process metrics + `/metrics` |
-| `modules/` | `users` `orgs` `policy` `budget` `expenses` `workflow` `audit` `notifications` `analytics` `attachments` |
+| `modules/` | `users` `orgs` `policy` `categories` `budget` `expenses` `workflow` `audit` `notifications` `analytics` `attachments` |
 
 ---
 
@@ -119,7 +123,7 @@ cp .env.example .env
 createdb ems
 npm run setup     # migrate + seed sample data
 npm run dev       # http://localhost:4000
-npm test          # 96 tests against ems_test
+npm test          # 119 tests against ems_test (also enforced in CI)
 ```
 
 Full setup, sample logins, API table and caveats are in

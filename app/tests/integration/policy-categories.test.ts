@@ -54,6 +54,33 @@ describe('Single active policy', () => {
       .expect(409);
   });
 
+  it('can delete an inactive policy but not the active one', async () => {
+    const a = await request(app)
+      .post('/policies')
+      .set('Authorization', bearer(fx.admin))
+      .send({ name: 'Old', rulesJson: rules });
+    // Creating B makes B active and A inactive.
+    const b = await request(app)
+      .post('/policies')
+      .set('Authorization', bearer(fx.admin))
+      .send({ name: 'Current', rulesJson: rules });
+
+    // Active policy cannot be deleted.
+    await request(app)
+      .delete(`/policies/${b.body.id}`)
+      .set('Authorization', bearer(fx.admin))
+      .expect(400);
+
+    // Inactive one can.
+    await request(app)
+      .delete(`/policies/${a.body.id}`)
+      .set('Authorization', bearer(fx.admin))
+      .expect(200);
+
+    const list = await request(app).get('/policies').set('Authorization', bearer(fx.admin));
+    expect(list.body.some((p: { id: string }) => p.id === a.body.id)).toBe(false);
+  });
+
   it('activating a policy deactivates the others', async () => {
     const a = await request(app)
       .post('/policies')

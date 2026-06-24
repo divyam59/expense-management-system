@@ -122,13 +122,18 @@ npm test          # run all tests (uses the ems_test database)
 npm run test:cov  # run with coverage report
 npm run test:watch
 ```
-- **104 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
+- **119 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
   ~94% functions, ~72% branches**. High coverage on the core flows; the
   uncovered branches are mostly defensive guards (null fallbacks, unreachable
   error paths) — branch % is deliberately not chased to 100%.
 - Tests run against a real Postgres `ems_test` DB (auto-migrated); cache uses the
   in-memory implementation. The build fails if coverage drops below thresholds
   (statements/functions/lines 90%, branches 70%).
+- **Regression policy:** every user-reported bug gets a dedicated test
+  (`tests/integration/ui-fixes.test.ts`, `policy-categories.test.ts`, and
+  additions to `expenses.test.ts` / `users.test.ts`). **CI**
+  (`.github/workflows/ci.yml`) runs the type-check + full suite on every push and
+  PR to `main`, so a regression can't merge.
 
 ---
 
@@ -145,22 +150,24 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | POST | `/auth/logout` | public | Revoke a refresh token |
 | GET | `/health` | public | Liveness |
 | GET | `/metrics` | public | Prometheus metrics |
-| POST | `/expenses` | expense:create | Create draft |
+| POST | `/expenses` | expense:create | Create draft (**422 if the org has no active policy**) |
 | GET | `/expenses?scope=mine\|reportees\|all` | by role | List (paginated, filter by status/type) |
 | GET | `/expenses/:id` | owner/mgr/finance | Get one + approval steps |
 | PATCH | `/expenses/:id` | requester | Edit (re-evaluates chain if amount crosses threshold) |
 | DELETE | `/expenses/:id` | requester | Delete a draft |
-| POST | `/expenses/:id/submit` | requester | Submit → builds approval chain |
+| POST | `/expenses/:id/submit` | requester | Submit → builds approval chain (**422 if no eligible approver exists for a level**) |
 | POST | `/expenses/:id/approve` | expense:approve | Approve current level |
 | POST | `/expenses/:id/reject` | expense:approve | Reject (reason required) |
 | POST | `/expenses/:id/withdraw` | requester | Withdraw |
 | GET | `/expenses/:id/history` | owner/mgr/finance | Audit trail |
 | GET | `/approvals/pending` | expense:approve | My approval queue |
 | POST | `/attachments/presign` | any | Mock S3 presigned URL |
-| GET/POST/PATCH/DELETE | `/policies` | policy:manage (read: analytics:view) | Approval policy CRUD |
+| GET/POST/PATCH/DELETE | `/policies` | policy:manage (read: analytics:view) | Approval policy CRUD. **Only one policy is active per org** — create/activate auto-deactivates the rest; duplicate names → 409; the active policy can't be deleted (400) |
+| GET | `/categories` | any | List the org's active expense categories |
+| POST/DELETE | `/categories` | policy:manage | Add / soft-deactivate an expense category (duplicate → 409) |
 | GET/POST | `/budgets` | budget:manage (read: analytics:view) | Budgets |
 | GET | `/budgets/utilization` | any | Current user's budget utilization |
-| GET/POST/PATCH | `/users` | user:manage | User management |
+| GET/POST/PATCH | `/users` | user:manage | User management. `PATCH …{isActive:false}` deactivates a user (can't deactivate yourself or the last active admin); inactive users can't log in or be assigned as approvers |
 | GET | `/notifications` / POST `/:id/read` | any | In-app notifications |
 | GET | `/analytics/summary\|spend\|by-status\|by-category\|audit-volume` | analytics:view | Dashboard data |
 
@@ -177,8 +184,10 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | RBAC | Permissions enforced per role | ✅ | `permissions.test.ts`, `expenses.test.ts`, `users.test.ts` |
 | Expense CRUD | Create/edit/delete draft, both types | ✅ | `expenses.test.ts`, `edge.test.ts` |
 | Lifecycle | draft→in_review→approved/rejected/withdrawn | ✅ | `expenses.test.ts` |
-| Multi-level approval | Chain built from policy by amount | ✅ | `expenses.test.ts` (1/2/3-level) |
-| Self-approval block | Cannot approve own expense | ✅ | `expenses.test.ts › prevents self-approval` |
+| Multi-level approval | Chain built from policy by amount; **stages are sequential** (L2 notified only after L1 approves) | ✅ | `expenses.test.ts` (1/2/3-level) |
+| Self-approval block | Cannot approve own expense; approver resolution **routes to another eligible user**, never the requester | ✅ | `expenses.test.ts › prevents self-approval`, `› routes an admin's own expense to another admin` |
+| No-approver block | Submit fails (422) if no eligible approver exists for a level | ✅ | `expenses.test.ts`, `policy-categories.test.ts` |
+| No-policy block | Creating an expense fails (422) if the org has no active policy | ✅ | `edge.test.ts`, `ui-fixes.test.ts` |
 | Wrong-approver block | Only assigned approver can act | ✅ | `expenses.test.ts`, `branches.test.ts` |
 | Reject reason required | Reject without reason → 400 | ✅ | `expenses.test.ts` |
 | Idempotency | Repeat approve w/ key = no double-apply | ✅ | `expenses.test.ts › idempotent` |
@@ -190,6 +199,9 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | Notifications | Generated on workflow events | ✅ | `misc.test.ts › notifications` |
 | Attachments | Mock presigned URL | ✅ | `misc.test.ts › attachments` |
 | Policy CRUD + validation | Bad ranges → 422 | ✅ | `policy.test.ts`, `branches.test.ts` |
+| Single active policy | One active policy/org; create/activate deactivates others; dup name → 409; active can't be deleted | ✅ | `policy-categories.test.ts` |
+| Expense categories | Admin-managed per-org categories (UI dropdown); dup → 409 | ✅ | `policy-categories.test.ts` |
+| User deactivation | Admin deactivates/reactivates users; self & last-admin guarded | ✅ | `users.test.ts` |
 | Analytics | Summary + breakdowns + cache | ✅ | `analytics.test.ts`, `branches.test.ts` |
 | Metrics | Prometheus `/metrics` | ✅ | `metrics.test.ts`, `auth.test.ts` |
 
@@ -209,7 +221,9 @@ These are **intentional** scope cuts (see Level 2 doc §15 for the production ap
    forgotten `WHERE org_id` would leak across tenants. Production hardening is
    **Postgres Row-Level Security** as defense-in-depth (see §8 / technical doc).
 5. **Approver resolution is basic**: `manager` = requester's manager (fallback to
-   first org manager); `finance`/`admin` = first active user with that role. No
+   first *other* org manager); `finance`/`admin` = first active user with that
+   role **excluding the requester**, so an expense never routes to its own author
+   (if no other eligible approver exists, submit is blocked with a 422). No
    routing rules, no delegation, no load-balancing across approvers.
 6. **SLA is stored, not enforced.** `sla_due_at` is set and surfaced (dashboard
    "SLA breached"), but there is **no scheduler** to auto-escalate. Production
@@ -270,7 +284,7 @@ app/
     http/                app factory, errors, asyncHandler, idempotency
     metrics/             in-process metrics + /metrics
     modules/
-      users/  policy/  budget/  expenses/  workflow/
+      users/  orgs/  policy/  categories/  budget/  expenses/  workflow/
       audit/  notifications/  analytics/  attachments/
   public/                static UI (index.html, app.js, styles.css)
   tests/                 unit + integration tests

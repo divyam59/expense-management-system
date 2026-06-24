@@ -99,7 +99,7 @@ nav button.active { background: var(--accent); border-color: var(--accent); colo
 .notif-item.muted { cursor: default; }
 
 /* Inline form errors + edit form */
-.form-err { color: var(--red); font-size: 13px; min-height: 16px; margin: 4px 0; }
+.form-err { color: var(--red); font-size: 13px; font-weight: 600; min-height: 16px; margin: 4px 0; }
 .edit-form {
   margin: 8px 0 14px; padding: 14px; border: 1px dashed var(--border);
   border-radius: 10px; background: var(--panel2);
@@ -146,6 +146,11 @@ tr:hover td { background: var(--panel2); }
   position: fixed; bottom: 24px; right: 24px;
   background: var(--panel2); border: 1px solid var(--accent);
   padding: 14px 18px; border-radius: 10px; z-index: 100;
+  font-weight: 600; max-width: 420px;
+}
+.toast.error {
+  background: #2a1418; border: 1px solid var(--red); color: #ffd7db;
+  font-weight: 700; border-left-width: 4px;
 }
 canvas { max-height: 260px; }
 .detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; font-size: 14px; }

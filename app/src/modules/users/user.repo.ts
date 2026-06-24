@@ -37,11 +37,20 @@ export async function countActiveByRole(orgId: string, role: Role): Promise<numb
   return Number(res.rows[0].count);
 }
 
-export async function firstUserWithRole(orgId: string, role: Role): Promise<User | null> {
-  const res = await query<User>(
-    'SELECT * FROM users WHERE org_id=$1 AND role=$2 AND is_active=true ORDER BY created_at ASC LIMIT 1',
-    [orgId, role]
-  );
+export async function firstUserWithRole(
+  orgId: string,
+  role: Role,
+  excludeUserId?: string
+): Promise<User | null> {
+  const params: unknown[] = [orgId, role];
+  let sql =
+    'SELECT * FROM users WHERE org_id=$1 AND role=$2 AND is_active=true';
+  if (excludeUserId) {
+    params.push(excludeUserId);
+    sql += ` AND id <> $${params.length}`;
+  }
+  sql += ' ORDER BY created_at ASC LIMIT 1';
+  const res = await query<User>(sql, params);
   return res.rows[0] ?? null;
 }
 

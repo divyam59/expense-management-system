@@ -110,12 +110,16 @@ function sessionExpired() {
   document.getElementById('loginErr').textContent = 'Session expired — please sign in again.';
 }
 
-function toast(msg) {
+let toastTimer = null;
+function toast(msg, type = 'info') {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), 2800);
+  t.classList.toggle('error', type === 'error');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), type === 'error' ? 5000 : 2800);
 }
+const toastErr = (msg) => toast(msg, 'error');
 
 const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
 const pill = (s) => `<span class="pill ${s}">${s.replace('_', ' ')}</span>`;
@@ -547,9 +551,9 @@ async function doSubmit(id) {
     await showDetail(id);
     refreshNotifs();
   } catch (e) {
-    toast(e.message);
+    toastErr(e.message);
     if (/budget/i.test(e.message)) {
-      toast('Over budget — please edit the amount instead of withdrawing.');
+      toastErr('Over budget — please edit the amount instead of withdrawing.');
       await showDetail(id);
       const f = document.getElementById('editForm');
       if (f) f.classList.remove('hidden');
@@ -567,7 +571,7 @@ async function act(id, action) {
     await loadExpenseList();
     if (state.openExpenseId) await showDetail(state.openExpenseId);
   } catch (e) {
-    toast(e.message);
+    toastErr(e.message);
   }
 }
 
@@ -590,7 +594,7 @@ async function loadApprovals() {
     pending
       .map(
         (p) => `<tr>
-      <td class="muted small">${p.requester_id?.slice(0, 8) || ''}</td>
+      <td>${p.requester_name || '—'}<div class="muted small">${p.requester_email || ''}</div></td>
       <td>${p.category}<div class="muted small">${p.description || ''}</div></td>
       <td>${fmt(p.base_amount)}</td><td>L${p.level}</td>
       <td class="row">
@@ -617,7 +621,7 @@ async function decide(id, action) {
     loadApprovals();
     refreshNotifs();
   } catch (e) {
-    toast(e.message);
+    toastErr(e.message);
   }
 }
 
@@ -785,9 +789,16 @@ async function viewPolicies() {
       }</td>
       ${
         canManage
-          ? `<td><button class="ghost small" onclick="togglePolicy('${p.id}', ${!p.active})">${
-              p.active ? 'Deactivate' : 'Activate'
-            }</button></td>`
+          ? `<td class="row">
+        <button class="ghost small" onclick="togglePolicy('${p.id}', ${!p.active})">${
+          p.active ? 'Deactivate' : 'Activate'
+        }</button>
+        ${
+          p.active
+            ? '<span class="muted small" title="Activate another policy first">In use</span>'
+            : `<button class="ghost small danger" onclick="deletePolicyUI('${p.id}','${p.name.replace(/'/g, '')}')">Delete</button>`
+        }
+      </td>`
           : ''
       }</tr>`
       )
@@ -855,13 +866,26 @@ async function createPolicy() {
   }
 }
 
+async function deletePolicyUI(id, name) {
+  if (!confirm(`Delete policy "${name}"? This can't be undone. Past expenses keep their own policy snapshot, so history is unaffected.`)) {
+    return;
+  }
+  try {
+    await api(`/policies/${id}`, { method: 'DELETE' });
+    toast('Policy deleted');
+    viewPolicies();
+  } catch (e) {
+    toastErr(e.message);
+  }
+}
+
 async function togglePolicy(id, active) {
   try {
     await api(`/policies/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) });
     toast(active ? 'Policy activated' : 'Policy deactivated');
     viewPolicies();
   } catch (e) {
-    toast(e.message);
+    toastErr(e.message);
   }
 }
 
@@ -887,7 +911,7 @@ async function removeCategory(id) {
     await loadCategories();
     viewPolicies();
   } catch (e) {
-    toast(e.message);
+    toastErr(e.message);
   }
 }
 
@@ -985,7 +1009,7 @@ async function toggleUser(id, activate) {
     toast(activate ? 'User reactivated' : 'User deactivated');
     viewUsers();
   } catch (e) {
-    toast(e.message);
+    toastErr(e.message);
   }
 }
 
@@ -1172,6 +1196,7 @@ window.saveEdit = saveEdit;
 window.openNotif = openNotif;
 window.markAllNotifs = markAllNotifs;
 window.togglePolicy = togglePolicy;
+window.deletePolicyUI = deletePolicyUI;
 window.removeCategory = removeCategory;
 window.closeDetail = closeDetail;
 window.switchDetailTab = switchDetailTab;

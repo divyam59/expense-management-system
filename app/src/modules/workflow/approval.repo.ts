@@ -78,9 +78,11 @@ export async function deletePendingSteps(
 export async function pendingForApprover(orgId: string, approverId: string) {
   const res = await query(
     `SELECT s.*, e.amount, e.base_amount, e.currency, e.type, e.category,
-            e.description, e.requester_id, e.status AS expense_status
+            e.description, e.requester_id, e.status AS expense_status,
+            u.name AS requester_name, u.email AS requester_email
        FROM approval_steps s
        JOIN expense_requests e ON e.id = s.expense_id
+       JOIN users u ON u.id = e.requester_id
       WHERE s.org_id=$1 AND s.approver_id=$2 AND s.status='pending'
         AND e.status='in_review' AND s.level = e.current_level
       ORDER BY s.sla_due_at ASC NULLS LAST`,

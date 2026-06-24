@@ -73,8 +73,13 @@ export async function updatePolicy(orgId: string, id: string, body: unknown) {
 }
 
 export async function deletePolicy(orgId: string, id: string) {
-  const ok = await repo.deletePolicy(orgId, id);
-  if (!ok) throw Errors.notFound('Policy not found');
+  const policy = await repo.getById(orgId, id);
+  if (!policy) throw Errors.notFound('Policy not found');
+  // Deleting the active policy would leave the org unable to route approvals.
+  if (policy.active) {
+    throw Errors.badRequest('Cannot delete the active policy. Activate another policy first.');
+  }
+  await repo.deletePolicy(orgId, id);
   return { deleted: true };
 }
 

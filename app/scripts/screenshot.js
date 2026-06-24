@@ -3,7 +3,9 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 
-const OUT = path.join(__dirname, '../../docs/screenshots');
+// Screenshots live with the technical-doc markdown source in the archive
+// (self-projects/docs/screenshots) — the same place make-pdf.js reads them from.
+const OUT = path.join(__dirname, '../../../docs/screenshots');
 const BASE = 'http://localhost:4000';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,6 +65,9 @@ async function logout(page) {
   await page.click('button[data-exp]');
   await sleep(700);
   await shot(page, '04-expense-detail.png');
+  // detail is a modal overlay now — dismiss it before the logout button is clickable
+  await page.keyboard.press('Escape');
+  await sleep(400);
   await logout(page);
 
   // 5. Manager approvals queue
