@@ -56,7 +56,12 @@
         <nav id="nav"></nav>
         <div class="who">
           <span id="whoami"></span>
-          <span id="notifBadge" class="badge hidden">0</span>
+          <div id="notifWrap" class="notif-wrap">
+            <button id="notifBtn" class="ghost notif-btn" title="Notifications">
+              🔔<span id="notifBadge" class="badge hidden">0</span>
+            </button>
+            <div id="notifPanel" class="notif-panel hidden"></div>
+          </div>
           <button id="logout" class="ghost">Logout</button>
         </div>
       </header>

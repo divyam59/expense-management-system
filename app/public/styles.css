@@ -75,8 +75,38 @@ nav button.active { background: var(--accent); border-color: var(--accent); colo
 .who { display: flex; align-items: center; gap: 10px; }
 .badge {
   background: var(--red); color: #fff; border-radius: 20px;
-  padding: 2px 8px; font-size: 12px; font-weight: 600;
+  padding: 1px 7px; font-size: 11px; font-weight: 700;
+  position: absolute; top: -4px; right: -6px;
 }
+
+/* Notifications */
+.notif-wrap { position: relative; }
+.notif-btn { position: relative; font-size: 16px; padding: 6px 10px; }
+.notif-panel {
+  position: absolute; right: 0; top: 46px; width: 320px;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 10px; z-index: 60; max-height: 420px; overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.notif-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  font-weight: 600; font-size: 14px;
+}
+.notif-item { padding: 11px 14px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+.notif-item:hover { background: var(--panel); }
+.notif-item.unread { border-left: 3px solid var(--accent); }
+.notif-item.muted { cursor: default; }
+
+/* Inline form errors + edit form */
+.form-err { color: var(--red); font-size: 13px; min-height: 16px; margin: 4px 0; }
+.edit-form {
+  margin: 8px 0 14px; padding: 14px; border: 1px dashed var(--border);
+  border-radius: 10px; background: var(--panel2);
+}
+textarea { font-family: 'SF Mono', Menlo, Consolas, monospace; resize: vertical; }
+button.small { padding: 5px 10px; font-size: 12px; }
+tr.sel td { background: #1b2530; }
 main { padding: 24px; max-width: 1200px; margin: 0 auto; }
 
 /* Cards & grids */
