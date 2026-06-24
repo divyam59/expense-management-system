@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EMS — Expense Management</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <!-- Login -->
+    <div id="login" class="login-wrap">
+      <div class="login-card">
+        <h1>EMS</h1>
+        <p class="muted">Expense Management System</p>
+
+        <!-- Sign in -->
+        <div id="loginForm">
+          <input id="email" placeholder="email" value="riya@acme.test" />
+          <input id="password" type="password" placeholder="password" value="password123" />
+          <button id="loginBtn" class="primary">Sign in</button>
+          <div class="quick">
+            <p class="muted small">Quick login (password: password123)</p>
+            <div class="quick-grid">
+              <button data-email="riya@acme.test">Employee (Riya)</button>
+              <button data-email="manager@acme.test">Manager (Amit)</button>
+              <button data-email="cfo@acme.test">Finance (Neha)</button>
+              <button data-email="admin@acme.test">Admin (Aditi)</button>
+            </div>
+          </div>
+          <p class="muted small center">
+            New company? <a href="#" id="toSignup" class="link">Create an organization</a>
+          </p>
+        </div>
+
+        <!-- Sign up (new org + first admin) -->
+        <div id="signupForm" class="hidden">
+          <input id="suOrg" placeholder="Organization name" value="Initech" />
+          <input id="suName" placeholder="Your name (admin)" value="Bill Lumbergh" />
+          <input id="suEmail" placeholder="admin email" value="admin@initech.test" />
+          <input id="suPass" type="password" placeholder="password (min 6)" value="password123" />
+          <button id="signupBtn" class="primary">Create organization</button>
+          <p class="muted small center">
+            Already have an account? <a href="#" id="toLogin" class="link">Sign in</a>
+          </p>
+        </div>
+
+        <p id="loginErr" class="err"></p>
+      </div>
+    </div>
+
+    <!-- App -->
+    <div id="app" class="hidden">
+      <header>
+        <div class="brand">EMS</div>
+        <nav id="nav"></nav>
+        <div class="who">
+          <span id="whoami"></span>
+          <span id="notifBadge" class="badge hidden">0</span>
+          <button id="logout" class="ghost">Logout</button>
+        </div>
+      </header>
+
+      <main id="view"></main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
