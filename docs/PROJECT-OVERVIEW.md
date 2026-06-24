@@ -50,7 +50,22 @@ the screenshots, and the original brief are archived in
 
 ---
 
-## Architecture (prototype)
+## Architecture
+
+### Target architecture
+
+![Target architecture](./architecture.png)
+
+The diagram above is the **target / production** architecture: multi-tenant
+clients behind an edge + API gateway, stateless core services (expense
+submission, approval workflows, policy enforcement, reporting, notifications,
+user/role management) communicating over an event bus, on a shared data layer
+with `tenant_id` isolation, all on cloud-native infra.
+
+### As-built (prototype)
+
+The current implementation is a **modular monolith** — the same core
+capabilities, without the gateway/event-bus/warehouse split:
 
 ```
 Browser SPA ──HTTP──▶ Express app (modular monolith)
@@ -60,9 +75,10 @@ Browser SPA ──HTTP──▶ Express app (modular monolith)
                          └──▶ Redis (optional cache; in-memory fallback)
 ```
 
-Stateless app → horizontally scalable behind a load balancer. The production
-path (microservices split, read replicas, sharding, multi-AZ, durable SLA
-timers) is described in the archived design docs.
+The app is stateless → horizontally scalable behind a load balancer. The path
+from this prototype to the target diagram (service split, event bus, object
+storage, analytics warehouse, read replicas / sharding / multi-AZ, durable SLA
+timers, OIDC, K8s/IaC) is described in the archived design docs.
 
 ## Code layout (`app/src`)
 
