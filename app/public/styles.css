@@ -200,3 +200,57 @@ tr.active-row td { background: #16271c; }
   cursor: pointer; padding: 0; font-size: 13px; line-height: 1;
 }
 .chip button:hover { color: var(--red); }
+
+/* Expense detail modal */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 48px 16px; overflow: auto;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 22px;
+  width: 100%; max-width: 640px; max-height: 86vh; overflow: auto;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+/* Tabs (approval chain / history) */
+.tabs { display: flex; gap: 4px; margin: 18px 0 4px; border-bottom: 1px solid var(--border); }
+.tab {
+  background: none; border: none; color: var(--muted);
+  padding: 9px 14px; border-radius: 0; border-bottom: 2px solid transparent;
+  font-size: 13px;
+}
+.tab:hover { border-color: transparent; color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-pane { padding-top: 6px; }
+
+/* Current / upcoming approval stages */
+.step.current { background: #1c2433; border-radius: 8px; padding-left: 8px; }
+.step.current .dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.25); }
+.step.upcoming { opacity: 0.5; }
+.step.upcoming .dot { background: var(--border); }
+.pill.current { background: #1b2c47; color: var(--accent); }
+.pill.upcoming { background: #2a2f37; color: var(--muted); }
+
+/* Deactivated users */
+tr.inactive-user td { opacity: 0.55; }
+button.danger { color: var(--red); border-color: transparent; }
+button.danger:hover { border-color: var(--red); }
+
+/* Filter bar + scrollable list */
+.filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.filter-bar select { max-width: 180px; }
+.filter-bar input { flex: 1; }
+.filter-bar #expCount { white-space: nowrap; }
+.table-scroll {
+  max-height: 440px; overflow: auto;
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.table-scroll table { margin: 0; }
+.table-scroll thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--panel2);
+}
+.table-scroll td, .table-scroll th { padding-left: 14px; padding-right: 14px; }

@@ -276,14 +276,40 @@ async function viewExpenses() {
     </div>
     <div class="panel">
       <div class="row between"><h3>My expenses</h3><button id="refreshExp" class="ghost small">↻ Refresh</button></div>
-      <table><thead><tr><th>Type</th><th>Category</th><th>Amount</th><th>Status</th><th></th></tr></thead>
-      <tbody id="expBody"></tbody></table>
+      <div class="filter-bar">
+        <select id="expFilter">
+          <option value="all">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="in_review">In review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="withdrawn">Withdrawn</option>
+        </select>
+        <input id="expSearch" placeholder="Search category or description…" />
+        <span id="expCount" class="muted small"></span>
+      </div>
+      <div class="table-scroll">
+        <table><thead><tr><th>Type</th><th>Category</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+        <tbody id="expBody"></tbody></table>
+      </div>
     </div>
     <div id="detail"></div>`;
   document.getElementById('createBtn').onclick = createExpense;
   document.getElementById('refreshExp').onclick = () => {
     loadExpenseList();
     if (state.openExpenseId) showDetail(state.openExpenseId);
+  };
+  const filterEl = document.getElementById('expFilter');
+  filterEl.value = state.expFilter || 'all';
+  filterEl.onchange = (e) => {
+    state.expFilter = e.target.value;
+    renderExpenseRows();
+  };
+  const searchEl = document.getElementById('expSearch');
+  searchEl.value = state.expSearch || '';
+  searchEl.oninput = (e) => {
+    state.expSearch = e.target.value;
+    renderExpenseRows();
   };
   await loadExpenseList();
   if (state.openExpenseId) await showDetail(state.openExpenseId);
@@ -292,9 +318,31 @@ async function viewExpenses() {
 async function loadExpenseList() {
   const body = document.getElementById('expBody');
   if (!body) return;
-  const list = await api('/expenses?scope=mine&limit=50');
+  state.expAll = await api('/expenses?scope=mine&limit=200');
+  renderExpenseRows();
+}
+
+function renderExpenseRows() {
+  const body = document.getElementById('expBody');
+  if (!body) return;
+  const all = state.expAll || [];
+  const f = state.expFilter || 'all';
+  const q = (state.expSearch || '').trim().toLowerCase();
+  let list = all;
+  if (f !== 'all') list = list.filter((e) => e.status === f);
+  if (q)
+    list = list.filter(
+      (e) =>
+        (e.category || '').toLowerCase().includes(q) ||
+        (e.description || '').toLowerCase().includes(q)
+    );
   body.innerHTML = list.map(rowExpense).join('') || emptyRow(5);
   body.querySelectorAll('[data-exp]').forEach((b) => (b.onclick = () => showDetail(b.dataset.exp)));
+  const count = document.getElementById('expCount');
+  if (count) {
+    count.textContent =
+      list.length === all.length ? `${all.length} total` : `${list.length} of ${all.length}`;
+  }
 }
 
 function rowExpense(e) {
@@ -345,73 +393,119 @@ async function showDetail(id) {
   const hist = await api(`/expenses/${id}/history`);
   const d = document.getElementById('detail');
   if (!d) return;
+  const tab = state.detailTab || 'chain';
   const editable = ['draft', 'submitted', 'in_review'].includes(e.status);
   const actions = [];
   if (e.status === 'draft') actions.push(`<button class="green" onclick="doSubmit('${id}')">Submit</button>`);
   if (editable) actions.push(`<button onclick="toggleEdit('${id}')">Edit</button>`);
   if (editable) actions.push(`<button class="red" onclick="act('${id}','withdraw')">Withdraw</button>`);
 
-  d.innerHTML = `
-    <div class="panel">
-      <div class="row between"><h3>Expense detail</h3><div class="row">${actions.join('')}</div></div>
-      <div class="detail-grid">
-        <div class="k">Status</div><div>${pill(e.status)}</div>
-        <div class="k">Type</div><div>${e.type}</div>
-        <div class="k">Amount</div><div>${fmt(e.base_amount)} (${e.amount} ${e.currency})</div>
-        <div class="k">Category</div><div>${e.category}</div>
-        <div class="k">Current level</div><div>${e.current_level}</div>
-      </div>
-      ${
-        editable
-          ? `<div id="editForm" class="edit-form hidden">
-        <h3>Edit expense</h3>
-        <div class="form-grid">
-          <div class="field">
-            <label for="eAmount">Amount</label>
-            <input id="eAmount" type="number" min="0" step="0.01" value="${e.amount}" />
-          </div>
-          <div class="field">
-            <label for="eCur">Currency</label>
-            <select id="eCur">${['INR', 'USD', 'EUR', 'GBP']
-              .map((c) => `<option ${c === e.currency ? 'selected' : ''}>${c}</option>`)
-              .join('')}</select>
-          </div>
-          <div class="field">
-            <label for="eCat">Category</label>
-            <select id="eCat">${categoryOptions(e.category)}</select>
-          </div>
-        </div>
-        <div class="field">
-          <label for="eDesc">Description</label>
-          <input id="eDesc" value="${e.description || ''}" placeholder="What was this expense for?" />
-        </div>
-        <p id="editErr" class="form-err"></p>
-        <div class="row">
-          <button class="primary" onclick="saveEdit('${id}')">Save changes</button>
-          <button class="ghost" onclick="toggleEdit('${id}')">Cancel</button>
-        </div>
-      </div>`
-          : ''
-      }
-      <div class="steps"><h3>Approval chain</h3>
-        ${
-          e.steps
-            .map(
-              (s) => `<div class="step ${s.status}"><span class="dot"></span>
-          L${s.level} · ${s.required_role} · ${pill(s.status)} ${s.reason ? `<span class="muted small">— ${s.reason}</span>` : ''}</div>`
-            )
-            .join('') || '<p class="muted">Not submitted yet</p>'
+  // Approval chain with the current stage clearly marked (only one stage is
+  // active at a time; later stages are "upcoming").
+  const chainHtml =
+    e.steps
+      .map((s) => {
+        let label = s.status;
+        let cls = s.status;
+        if (e.status === 'in_review') {
+          if (s.level === e.current_level) {
+            label = 'awaiting approval';
+            cls = 'current';
+          } else if (s.level > e.current_level && s.status === 'pending') {
+            label = 'upcoming';
+            cls = 'upcoming';
+          }
         }
-      </div>
-      <div class="steps"><h3>History (audit trail)</h3>
-        ${hist
-          .map(
-            (h) =>
-              `<div class="step"><span class="dot"></span>${h.action} <span class="muted small">${new Date(h.created_at).toLocaleString()}</span></div>`
-          )
-          .join('')}
+        const pillCls = cls === 'current' || cls === 'upcoming' ? cls : s.status;
+        return `<div class="step ${cls}"><span class="dot"></span>
+          L${s.level} · ${s.required_role} · <span class="pill ${pillCls}">${label}</span> ${
+            s.reason ? `<span class="muted small">— ${s.reason}</span>` : ''
+          }</div>`;
+      })
+      .join('') || '<p class="muted">Not submitted yet — submit to start the approval flow.</p>';
+
+  const histHtml =
+    hist
+      .map(
+        (h) =>
+          `<div class="step"><span class="dot"></span>${h.action} <span class="muted small">${new Date(
+            h.created_at
+          ).toLocaleString()}</span></div>`
+      )
+      .join('') || '<p class="muted">No history yet.</p>';
+
+  d.innerHTML = `
+    <div class="modal-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
+      <div class="modal">
+        <div class="row between">
+          <h3>Expense detail</h3>
+          <button class="ghost small" onclick="closeDetail()">✕ Close</button>
+        </div>
+        <div class="detail-grid">
+          <div class="k">Status</div><div>${pill(e.status)}</div>
+          <div class="k">Type</div><div>${e.type.replace('_', ' ')}</div>
+          <div class="k">Amount</div><div>${fmt(e.base_amount)} ${
+            e.currency !== 'INR' ? `<span class="muted small">(${e.amount} ${e.currency})</span>` : ''
+          }</div>
+          <div class="k">Category</div><div>${e.category}</div>
+          <div class="k">Description</div><div>${e.description || '<span class="muted">—</span>'}</div>
+        </div>
+        ${actions.length ? `<div class="row" style="margin-top:14px">${actions.join('')}</div>` : ''}
+        ${
+          editable
+            ? `<div id="editForm" class="edit-form hidden">
+          <h3>Edit expense</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="eAmount">Amount</label>
+              <input id="eAmount" type="number" min="0" step="0.01" value="${e.amount}" />
+            </div>
+            <div class="field">
+              <label for="eCur">Currency</label>
+              <select id="eCur">${['INR', 'USD', 'EUR', 'GBP']
+                .map((c) => `<option ${c === e.currency ? 'selected' : ''}>${c}</option>`)
+                .join('')}</select>
+            </div>
+            <div class="field">
+              <label for="eCat">Category</label>
+              <select id="eCat">${categoryOptions(e.category)}</select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="eDesc">Description</label>
+            <input id="eDesc" value="${e.description || ''}" placeholder="What was this expense for?" />
+          </div>
+          <p id="editErr" class="form-err"></p>
+          <div class="row">
+            <button class="primary" onclick="saveEdit('${id}')">Save changes</button>
+            <button class="ghost" onclick="toggleEdit('${id}')">Cancel</button>
+          </div>
+        </div>`
+            : ''
+        }
+        <div class="tabs">
+          <button class="tab ${tab === 'chain' ? 'active' : ''}" data-tab="chain" onclick="switchDetailTab('chain')">Approval chain</button>
+          <button class="tab ${tab === 'history' ? 'active' : ''}" data-tab="history" onclick="switchDetailTab('history')">History</button>
+        </div>
+        <div id="tabChain" class="tab-pane steps ${tab === 'chain' ? '' : 'hidden'}">${chainHtml}</div>
+        <div id="tabHistory" class="tab-pane steps ${tab === 'history' ? '' : 'hidden'}">${histHtml}</div>
       </div>
     </div>`;
+}
+
+function closeDetail() {
+  state.openExpenseId = null;
+  const d = document.getElementById('detail');
+  if (d) d.innerHTML = '';
+}
+
+function switchDetailTab(tab) {
+  state.detailTab = tab;
+  document
+    .querySelectorAll('#detailOverlay .tab')
+    .forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('tabChain').classList.toggle('hidden', tab !== 'chain');
+  document.getElementById('tabHistory').classList.toggle('hidden', tab !== 'history');
 }
 
 function toggleEdit(id) {
@@ -800,7 +894,9 @@ async function removeCategory(id) {
 // ---------- Users ----------
 async function viewUsers() {
   const users = await api('/users');
-  const managers = users.filter((u) => u.role === 'manager' || u.role === 'admin');
+  const managers = users.filter(
+    (u) => (u.role === 'manager' || u.role === 'admin') && u.is_active !== false
+  );
   const hasManager = users.some((u) => u.role === 'manager');
   const needsSetup = users.length <= 1 || !hasManager;
   const v = document.getElementById('view');
@@ -854,13 +950,43 @@ async function viewUsers() {
       <button class="primary" id="addUserBtn">Create user</button>
     </div>
     <div class="panel"><h3>Users in your organization</h3>
-    <table><thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>${users
-      .map(
-        (u) => `<tr><td>${u.name}</td><td>${u.email}</td><td><span class="small">${u.role}</span></td></tr>`
-      )
+      .map((u) => {
+        const inactive = u.is_active === false;
+        const isSelf = u.id === state.user.id;
+        const statusPill = inactive
+          ? '<span class="pill draft">inactive</span>'
+          : '<span class="pill approved">active</span>';
+        const action = isSelf
+          ? '<span class="muted small">you</span>'
+          : `<button class="ghost small ${inactive ? '' : 'danger'}" onclick="toggleUser('${u.id}', ${inactive})">${
+              inactive ? 'Reactivate' : 'Deactivate'
+            }</button>`;
+        return `<tr class="${inactive ? 'inactive-user' : ''}">
+        <td>${u.name}</td><td>${u.email}</td>
+        <td><span class="small">${u.role}</span></td>
+        <td>${statusPill}</td>
+        <td>${action}</td></tr>`;
+      })
       .join('')}</tbody></table></div>`;
   document.getElementById('addUserBtn').onclick = createUser;
+}
+
+async function toggleUser(id, activate) {
+  if (
+    !activate &&
+    !confirm('Deactivate this user? They will no longer be able to log in, but their past expenses and approvals are kept.')
+  ) {
+    return;
+  }
+  try {
+    await api(`/users/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: activate }) });
+    toast(activate ? 'User reactivated' : 'User deactivated');
+    viewUsers();
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 async function createUser() {
@@ -1047,6 +1173,14 @@ window.openNotif = openNotif;
 window.markAllNotifs = markAllNotifs;
 window.togglePolicy = togglePolicy;
 window.removeCategory = removeCategory;
+window.closeDetail = closeDetail;
+window.switchDetailTab = switchDetailTab;
+window.toggleUser = toggleUser;
+
+// Esc closes the expense detail modal.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.openExpenseId) closeDetail();
+});
 
 // ---------- Bootstrap (restore session on refresh) ----------
 (function bootstrap() {

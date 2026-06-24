@@ -61,6 +61,6 @@ userRouter.patch(
   '/:id',
   requirePermission('user:manage'),
   asyncHandler(async (req, res) => {
-    res.json(await service.updateUser(req.user!.org_id, req.params.id, req.body));
+    res.json(await service.updateUser(req.user!.org_id, req.params.id, req.body, req.user!.id));
   })
 );

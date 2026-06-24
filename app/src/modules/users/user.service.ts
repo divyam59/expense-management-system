@@ -81,7 +81,12 @@ export async function listUsers(orgId: string) {
   return (await repo.listByOrg(orgId)).map(sanitize);
 }
 
-export async function updateUser(orgId: string, id: string, body: unknown) {
+export async function updateUser(
+  orgId: string,
+  id: string,
+  body: unknown,
+  actingUserId?: string
+) {
   const schema = z.object({
     name: z.string().min(1).optional(),
     role: z.enum(['employee', 'manager', 'finance', 'admin']).optional(),
@@ -90,6 +95,19 @@ export async function updateUser(orgId: string, id: string, body: unknown) {
   });
   const parsed = schema.safeParse(body);
   if (!parsed.success) throw Errors.badRequest('Invalid payload', parsed.error.flatten());
+
+  // Guard rails around deactivation so an org can't lock itself out.
+  if (parsed.data.isActive === false) {
+    if (actingUserId && actingUserId === id) {
+      throw Errors.badRequest('You cannot deactivate your own account');
+    }
+    const target = await repo.findById(orgId, id);
+    if (!target) throw Errors.notFound('User not found');
+    if (target.role === 'admin' && (await repo.countActiveByRole(orgId, 'admin')) <= 1) {
+      throw Errors.badRequest('Cannot deactivate the last active admin');
+    }
+  }
+
   const updated = await repo.updateUser(orgId, id, {
     name: parsed.data.name,
     role: parsed.data.role as Role | undefined,

@@ -29,6 +29,14 @@ export async function listReportees(orgId: string, managerId: string): Promise<U
   return res.rows;
 }
 
+export async function countActiveByRole(orgId: string, role: Role): Promise<number> {
+  const res = await query<{ count: string }>(
+    'SELECT COUNT(*)::text AS count FROM users WHERE org_id=$1 AND role=$2 AND is_active=true',
+    [orgId, role]
+  );
+  return Number(res.rows[0].count);
+}
+
 export async function firstUserWithRole(orgId: string, role: Role): Promise<User | null> {
   const res = await query<User>(
     'SELECT * FROM users WHERE org_id=$1 AND role=$2 AND is_active=true ORDER BY created_at ASC LIMIT 1',
