@@ -68,7 +68,7 @@ export async function createExpense(user: AuthUser, body: unknown) {
 export async function getExpense(user: AuthUser, id: string) {
   const expense = await repo.getById(user.org_id, id);
   if (!expense) throw Errors.notFound('Expense not found');
-  await assertCanView(user, expense.requester_id);
+  await assertCanView(user, expense);
   const steps = await stepRepo.listSteps(user.org_id, id);
   return { ...expense, steps };
 }
@@ -297,7 +297,7 @@ export async function deleteExpense(user: AuthUser, id: string) {
 export async function history(user: AuthUser, id: string) {
   const expense = await repo.getById(user.org_id, id);
   if (!expense) throw Errors.notFound('Expense not found');
-  await assertCanView(user, expense.requester_id);
+  await assertCanView(user, expense);
   return getHistory(user.org_id, 'expense', id);
 }
 
@@ -311,16 +311,19 @@ export async function assertCanViewExpense(
 ): Promise<ExpenseRequest> {
   const expense = await repo.getById(user.org_id, id);
   if (!expense) throw Errors.notFound('Expense not found');
-  await assertCanView(user, expense.requester_id);
+  await assertCanView(user, expense);
   return expense;
 }
 
-async function assertCanView(user: AuthUser, requesterId: string): Promise<void> {
-  if (requesterId === user.id) return;
+async function assertCanView(user: AuthUser, expense: ExpenseRequest): Promise<void> {
+  if (expense.requester_id === user.id) return;
   if (hasPermission(user.role, 'expense:read:all')) return;
   if (hasPermission(user.role, 'expense:read:reportees')) {
     const reportees = await userRepo.listReportees(user.org_id, user.id);
-    if (reportees.some((r) => r.id === requesterId)) return;
+    if (reportees.some((r) => r.id === expense.requester_id)) return;
   }
+  // An assigned approver can always view the expense they must act on (and its
+  // bills) even if it isn't one of their direct reportees.
+  if (await stepRepo.isAssignedApprover(user.org_id, expense.id, user.id)) return;
   throw Errors.forbidden();
 }

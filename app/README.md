@@ -128,7 +128,7 @@ npm test          # run all tests (uses the ems_test database)
 npm run test:cov  # run with coverage report
 npm run test:watch
 ```
-- **127 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
+- **128 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
   ~94% functions, ~72% branches**. High coverage on the core flows; the
   uncovered branches are mostly defensive guards (null fallbacks, unreachable
   error paths) — branch % is deliberately not chased to 100%.
@@ -168,8 +168,8 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | GET | `/expenses/:id/history` | owner/mgr/finance | Audit trail |
 | POST | `/expenses/:id/attachments` | requester | **Upload a bill** (multipart `file`; image or PDF, ≤5MB) while editable |
 | GET | `/expenses/:id/attachments` | owner/mgr/finance | List a bill's metadata for an expense |
-| GET | `/attachments/:id` | owner/mgr/finance | Download/preview a bill (authenticated, tenant-scoped) |
-| GET | `/approvals/pending` | expense:approve | My approval queue |
+| GET | `/attachments/:id` | owner/mgr/finance/assigned approver | Download/preview a bill (authenticated, tenant-scoped) |
+| GET | `/approvals/pending` | expense:approve | My approval queue (rows include bill thumbnail info) |
 | POST | `/attachments/presign` | any | Mock S3 presigned URL (documented direct-to-bucket path) |
 | GET/POST/PATCH/DELETE | `/policies` | policy:manage (read: analytics:view) | Approval policy CRUD. **Only one policy is active per org** — create/activate auto-deactivates the rest; duplicate names → 409; the active policy can't be deleted (400) |
 | GET | `/categories` | any | List the org's active expense categories |
@@ -206,7 +206,7 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | Audit trail | Every change logged immutably, in-txn | ✅ | `misc.test.ts › audit` |
 | Audit S3 shipping | Only ships when flag enabled | ✅ | `misc.test.ts › ships audit` |
 | Notifications | Generated on workflow events | ✅ | `misc.test.ts › notifications` |
-| Bill uploads | Upload image/PDF, list, download; type/size/permission enforced | ✅ | `attachments.test.ts` |
+| Bill uploads | Upload image/PDF, list, download; type/size/permission enforced; bill shown on the approver queue and viewable by the assigned approver | ✅ | `attachments.test.ts` |
 | S3 presign (mock) | Mock presigned URL | ✅ | `misc.test.ts › attachments` |
 | Policy CRUD + validation | Bad ranges → 422 | ✅ | `policy.test.ts`, `branches.test.ts` |
 | Single active policy | One active policy/org; create/activate deactivates others; dup name → 409; active can't be deleted | ✅ | `policy-categories.test.ts` |

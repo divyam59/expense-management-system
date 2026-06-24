@@ -279,5 +279,7 @@ button.danger:hover { border-color: var(--red); }
   border: 1px solid var(--border);
 }
 .bill-thumb.has-img { color: transparent; }
+.bill-thumb.sm { width: 40px; height: 40px; flex: 0 0 40px; font-size: 16px; cursor: pointer; }
+.bill-thumb.sm:hover { border-color: var(--accent); }
 .bill-meta { flex: 1; min-width: 0; }
 .bill-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

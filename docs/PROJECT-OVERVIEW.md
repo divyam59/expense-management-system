@@ -17,7 +17,7 @@ screenshot-by-screenshot API + UI reference, see
 project-ems/
   app/                 the application (Node + TypeScript + Express + Postgres)
     src/               source (see "Code layout" below)
-    tests/             127 unit + integration tests (run against real Postgres)
+    tests/             128 unit + integration tests (run against real Postgres)
     public/            single-page UI (vanilla JS + Chart.js)
     scripts/           UI screenshot + PDF generation helpers
     README.md          how to set up, run, test; API table; caveats
@@ -126,7 +126,7 @@ cp .env.example .env
 createdb ems
 npm run setup     # migrate + seed sample data
 npm run dev       # http://localhost:4000
-npm test          # 127 tests against ems_test (also enforced in CI)
+npm test          # 128 tests against ems_test (also enforced in CI)
 ```
 
 Full setup, sample logins, API table and caveats are in

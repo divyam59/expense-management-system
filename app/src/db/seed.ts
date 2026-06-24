@@ -1,4 +1,6 @@
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { query, closePool } from './pool';
 import { runMigrations } from './migrate';
 import { hashPassword } from '../auth/password';
@@ -7,11 +9,19 @@ import * as expenseService from '../modules/expenses/expense.service';
 import * as attachmentService from '../modules/attachments/attachment.service';
 import { seedDefaults as seedCategories } from '../modules/categories/category.service';
 
-// A tiny valid PNG used to demonstrate the bill-upload feature in seeded data.
-const SAMPLE_PNG = Buffer.from(
+// Prefer a realistic-looking receipt asset so seeded bills render as believable
+// thumbnails; fall back to a 1x1 PNG if the asset is missing.
+const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64'
 );
+const SAMPLE_PNG = ((): Buffer => {
+  try {
+    return readFileSync(join(__dirname, 'assets', 'sample-receipt.png'));
+  } catch {
+    return TINY_PNG;
+  }
+})();
 
 async function attachSampleBill(
   user: AuthUser,

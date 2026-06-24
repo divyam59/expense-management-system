@@ -128,7 +128,7 @@ npm test          # run all tests (uses the ems_test database)
 npm run test:cov  # run with coverage report
 npm run test:watch
 ```
-- **127 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
+- **128 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
   ~94% functions, ~72% branches**. High coverage on the core flows; the
   uncovered branches are mostly defensive guards (null fallbacks, unreachable
   error paths) — branch % is deliberately not chased to 100%.

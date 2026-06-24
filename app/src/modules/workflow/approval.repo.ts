@@ -74,19 +74,41 @@ export async function deletePendingSteps(
   );
 }
 
-/** Pending approvals assigned to a given approver. */
+/** Pending approvals assigned to a given approver (with bill/attachment info). */
 export async function pendingForApprover(orgId: string, approverId: string) {
   const res = await query(
     `SELECT s.*, e.amount, e.base_amount, e.currency, e.type, e.category,
             e.description, e.requester_id, e.status AS expense_status,
-            u.name AS requester_name, u.email AS requester_email
+            u.name AS requester_name, u.email AS requester_email,
+            att.cnt AS attachment_count,
+            att.first_id AS first_attachment_id,
+            att.first_type AS first_attachment_type
        FROM approval_steps s
        JOIN expense_requests e ON e.id = s.expense_id
        JOIN users u ON u.id = e.requester_id
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS cnt,
+                (array_agg(a.id ORDER BY a.uploaded_at))[1] AS first_id,
+                (array_agg(a.content_type ORDER BY a.uploaded_at))[1] AS first_type
+           FROM attachments a WHERE a.expense_id = e.id
+       ) att ON true
       WHERE s.org_id=$1 AND s.approver_id=$2 AND s.status='pending'
         AND e.status='in_review' AND s.level = e.current_level
       ORDER BY s.sla_due_at ASC NULLS LAST`,
     [orgId, approverId]
   );
   return res.rows;
+}
+
+/** True if the user is (or was) an assigned approver on this expense. */
+export async function isAssignedApprover(
+  orgId: string,
+  expenseId: string,
+  userId: string
+): Promise<boolean> {
+  const res = await query(
+    'SELECT 1 FROM approval_steps WHERE org_id=$1 AND expense_id=$2 AND approver_id=$3 LIMIT 1',
+    [orgId, expenseId, userId]
+  );
+  return (res.rowCount ?? 0) > 0;
 }

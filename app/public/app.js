@@ -712,10 +712,34 @@ async function viewApprovals() {
   const v = document.getElementById('view');
   v.innerHTML = `<div class="panel">
     <div class="row between"><h3>Pending approvals (your queue)</h3><button id="refreshAppr" class="ghost small">↻ Refresh</button></div>
-    <table><thead><tr><th>Requester</th><th>Category</th><th>Amount</th><th>Level</th><th>Actions</th></tr></thead>
-    <tbody id="apprBody"></tbody></table></div>`;
+    <table><thead><tr><th>Requester</th><th>Category</th><th>Amount</th><th>Level</th><th>Bill</th><th>Actions</th></tr></thead>
+    <tbody id="apprBody"></tbody></table></div>
+    <div id="detail"></div>`;
   document.getElementById('refreshAppr').onclick = loadApprovals;
   await loadApprovals();
+}
+
+// Renders the bill cell for an approval row: a thumbnail for a single image,
+// or a link that opens the bill / the expense's Bills tab.
+function apprBillCell(p) {
+  const n = p.attachment_count || 0;
+  if (!n) return '<td><span class="muted">—</span></td>';
+  const isImg = (p.first_attachment_type || '').startsWith('image/');
+  if (isImg && n === 1) {
+    return `<td><div class="bill-thumb sm" data-att="${p.first_attachment_id}" title="View bill"
+      onclick="openBill('${p.first_attachment_id}')"></div></td>`;
+  }
+  const onClick =
+    n === 1 ? `openBill('${p.first_attachment_id}')` : `openExpenseBills('${p.expense_id}')`;
+  return `<td><button class="ghost small" onclick="${onClick}">📎 View${
+    n > 1 ? ` (${n})` : ''
+  }</button></td>`;
+}
+
+// Open an expense's detail straight on the Bills tab (read-only review view).
+async function openExpenseBills(id) {
+  state.detailTab = 'bills';
+  await showDetail(id);
 }
 
 async function loadApprovals() {
@@ -726,15 +750,22 @@ async function loadApprovals() {
     pending
       .map(
         (p) => `<tr>
-      <td>${p.requester_name || '—'}<div class="muted small">${p.requester_email || ''}</div></td>
-      <td>${p.category}<div class="muted small">${p.description || ''}</div></td>
+      <td>${esc(p.requester_name) || '—'}<div class="muted small">${esc(p.requester_email)}</div></td>
+      <td>${esc(p.category)}<div class="muted small">${esc(p.description)}</div></td>
       <td>${fmt(p.base_amount)}</td><td>L${p.level}</td>
+      ${apprBillCell(p)}
       <td class="row">
         <button class="green" onclick="decide('${p.expense_id}','approve')">Approve</button>
         <button class="red" onclick="decide('${p.expense_id}','reject')">Reject</button>
       </td></tr>`
       )
-      .join('') || emptyRow(5);
+      .join('') || emptyRow(6);
+  // Load image thumbnails for rows that have a single image bill.
+  loadBillThumbs(
+    pending
+      .filter((p) => p.attachment_count && (p.first_attachment_type || '').startsWith('image/'))
+      .map((p) => ({ id: p.first_attachment_id, content_type: p.first_attachment_type }))
+  );
 }
 
 async function decide(id, action) {
@@ -1335,6 +1366,7 @@ window.switchDetailTab = switchDetailTab;
 window.toggleUser = toggleUser;
 window.uploadBill = uploadBill;
 window.openBill = openBill;
+window.openExpenseBills = openExpenseBills;
 
 // Esc closes the expense detail modal.
 document.addEventListener('keydown', (e) => {

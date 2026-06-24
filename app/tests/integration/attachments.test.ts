@@ -122,6 +122,34 @@ describe('bill attachments', () => {
     expect(dl.status).toBe(403);
   });
 
+  it('surfaces the bill on the approver queue and lets the assigned approver view it', async () => {
+    const id = await draft(3000);
+    const up = await request(app)
+      .post(`/expenses/${id}/attachments`)
+      .set('Authorization', bearer(fx.emp))
+      .attach('file', PNG, { filename: 'r.png', contentType: 'image/png' });
+    await request(app)
+      .post(`/expenses/${id}/submit`)
+      .set('Authorization', bearer(fx.emp))
+      .expect(200);
+
+    const queue = await request(app)
+      .get('/approvals/pending')
+      .set('Authorization', bearer(fx.manager));
+    expect(queue.status).toBe(200);
+    const row = queue.body.find((r: { expense_id: string }) => r.expense_id === id);
+    expect(row).toBeTruthy();
+    expect(row.attachment_count).toBe(1);
+    expect(row.first_attachment_id).toBe(up.body.id);
+    expect(row.first_attachment_type).toBe('image/png');
+
+    // The assigned approver can fetch the bill bytes.
+    const dl = await request(app)
+      .get(`/attachments/${up.body.id}`)
+      .set('Authorization', bearer(fx.manager));
+    expect(dl.status).toBe(200);
+  });
+
   it('does not leak a bill across tenants (404)', async () => {
     const id = await draft();
     const up = await request(app)
