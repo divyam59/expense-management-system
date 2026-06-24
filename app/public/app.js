@@ -294,6 +294,10 @@ async function viewExpenses() {
         <label for="fdesc">Description</label>
         <input id="fdesc" placeholder="What was this expense for? (e.g. Client dinner, Mumbai)" />
       </div>
+      <div class="field">
+        <label for="fbill">Bill / receipt <span class="muted small">(optional — image or PDF, max 5MB)</span></label>
+        <input id="fbill" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" />
+      </div>
       <p id="expErr" class="form-err"></p>
       <button class="primary" id="createBtn">Create draft</button>
     </div>
@@ -391,7 +395,9 @@ async function createExpense() {
     return;
   }
   try {
-    await api('/expenses', {
+    const fileInput = document.getElementById('fbill');
+    const file = fileInput && fileInput.files && fileInput.files[0];
+    const created = await api('/expenses', {
       method: 'POST',
       body: JSON.stringify({
         type: document.getElementById('ftype').value,
@@ -401,13 +407,37 @@ async function createExpense() {
         description: document.getElementById('fdesc').value
       })
     });
-    toast('Draft created');
+    // Attach the bill straight away (at creation, not buried in the detail view).
+    if (file) {
+      try {
+        await postBill(created.id, file);
+      } catch (be) {
+        toastErr(`Draft created, but bill upload failed: ${be.message}`);
+      }
+    }
+    toast(file ? 'Draft created with bill attached' : 'Draft created');
     document.getElementById('famount').value = '';
     document.getElementById('fdesc').value = '';
+    if (fileInput) fileInput.value = '';
     loadExpenseList();
   } catch (e) {
     err.textContent = e.message;
   }
+}
+
+// Upload a bill (multipart) to an expense; shared by the create form and the
+// detail "Bills" tab so both go through the same validation/error handling.
+async function postBill(expenseId, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/expenses/${expenseId}/attachments`, {
+    method: 'POST',
+    headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {},
+    body: fd
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(errMessage(data, res.status));
+  return data;
 }
 
 async function showDetail(id) {
@@ -582,16 +612,8 @@ async function uploadBill(id) {
     if (err) err.textContent = 'Choose an image or PDF first.';
     return;
   }
-  const fd = new FormData();
-  fd.append('file', file);
   try {
-    const res = await fetch(`/expenses/${id}/attachments`, {
-      method: 'POST',
-      headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {},
-      body: fd
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(errMessage(data, res.status));
+    await postBill(id, file);
     toast('Bill uploaded');
     state.detailTab = 'bills';
     await showDetail(id);

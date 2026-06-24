@@ -107,20 +107,21 @@ async function logout(page) {
   await page.keyboard.press('Escape');
   await sleep(400);
 
-  // 9. Bill upload — create a fresh draft, open it, attach a receipt image
+  // 9. Bill at creation — attach a receipt right on the create form, then show
+  //    it stored on the new expense's Bills tab.
   await page.type('#famount', '1850');
   await page.type('#fdesc', 'Client dinner — receipt attached');
+  const billInput = await page.waitForSelector('#fbill');
+  await billInput.uploadFile(RECEIPT_PATH);
+  await sleep(300);
+  await shot(page, '09-bill-at-creation.png');
   await page.click('#createBtn');
-  await sleep(1000); // list refreshes; newest draft is the first row
-  await page.click('button[data-exp]');
+  await sleep(1500); // create + bill upload + list refresh
+  await page.click('button[data-exp]'); // newest draft (created with the bill)
   await sleep(600);
   await page.click('#detailOverlay .tab[data-tab="bills"]');
-  await sleep(300);
-  const fileInput = await page.waitForSelector('#billFile');
-  await fileInput.uploadFile(RECEIPT_PATH);
-  await page.click('#detailOverlay .bill-upload button');
-  await sleep(1500); // upload + re-render + thumbnail fetch
-  await shot(page, '09-bill-upload.png');
+  await sleep(1300); // thumbnail fetch
+  await shot(page, '10-bill-stored.png');
   await page.keyboard.press('Escape');
   await sleep(400);
   await logout(page);

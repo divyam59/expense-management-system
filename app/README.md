@@ -93,9 +93,10 @@ Seeded approval policy (Acme):
 3. Create a ₹20,000 expense as Riya → submit → manager approves → **Neha (finance)** approves → status `approved`.
 4. Login as **Neha** → **Dashboard** → see charts populated from real data.
 5. Open any expense → see the **approval chain** + **History (audit trail)**.
-6. Open one of your own editable expenses → **Bills** tab → **upload a receipt**
-   (image or PDF) → it appears with a thumbnail; click **View** to preview it.
-   (Seed data already attaches a sample bill to a couple of expenses.)
+6. **Attach a bill at creation:** on the create-expense form pick a receipt
+   (image or PDF) before clicking **Create draft** — it's uploaded with the
+   draft. You can also add/view bills later from an expense's **Bills** tab
+   (thumbnail + **View** to preview). (Seed data already attaches a sample bill.)
 
 ### B) Via curl
 ```bash
