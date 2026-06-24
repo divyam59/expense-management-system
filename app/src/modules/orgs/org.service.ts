@@ -7,6 +7,7 @@ import { signAccessToken } from '../../auth/jwt';
 import { issueRefreshToken } from '../../auth/refreshToken';
 import { recordAudit } from '../audit/audit.service';
 import { findByEmail } from '../users/user.repo';
+import { seedDefaults as seedCategories } from '../categories/category.service';
 import { AuthUser } from '../../types';
 
 const signupSchema = z.object({
@@ -65,6 +66,8 @@ export async function signup(body: unknown) {
        VALUES ($1,$2,NULL,'org','monthly',$3,$4)`,
       [randomUUID(), orgId, 2000000, baseCurrency]
     );
+
+    await seedCategories(orgId, (sql, params) => client.query(sql, params as never[]));
 
     await recordAudit(
       {

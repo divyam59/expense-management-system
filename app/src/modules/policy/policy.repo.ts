@@ -1,6 +1,9 @@
-import { query } from '../../db/pool';
+import { query, withTransaction } from '../../db/pool';
 import { Policy } from '../../types';
 
+// A new policy becomes the single active policy for the org: any previously
+// active policy is deactivated in the same transaction so there is never any
+// ambiguity about which policy drives approvals.
 export async function insertPolicy(p: {
   id: string;
   org_id: string;
@@ -8,12 +11,47 @@ export async function insertPolicy(p: {
   rules_json: unknown;
   tolerance_percent: number;
 }): Promise<Policy> {
+  return withTransaction(async (client) => {
+    await client.query('UPDATE policies SET active=false WHERE org_id=$1 AND active=true', [
+      p.org_id
+    ]);
+    const res = await client.query<Policy>(
+      `INSERT INTO policies (id, org_id, name, rules_json, tolerance_percent, active, version)
+       VALUES ($1,$2,$3,$4,$5,true,1) RETURNING *`,
+      [p.id, p.org_id, p.name, JSON.stringify(p.rules_json), p.tolerance_percent]
+    );
+    return res.rows[0];
+  });
+}
+
+export async function findByName(orgId: string, name: string): Promise<Policy | null> {
   const res = await query<Policy>(
-    `INSERT INTO policies (id, org_id, name, rules_json, tolerance_percent, active, version)
-     VALUES ($1,$2,$3,$4,$5,true,1) RETURNING *`,
-    [p.id, p.org_id, p.name, JSON.stringify(p.rules_json), p.tolerance_percent]
+    'SELECT * FROM policies WHERE org_id=$1 AND lower(name)=lower($2) LIMIT 1',
+    [orgId, name]
   );
-  return res.rows[0];
+  return res.rows[0] ?? null;
+}
+
+// Activating a policy deactivates every other policy in the org (single active
+// policy invariant). Deactivating just flips this one off.
+export async function setActive(
+  orgId: string,
+  id: string,
+  active: boolean
+): Promise<Policy | null> {
+  return withTransaction(async (client) => {
+    if (active) {
+      await client.query('UPDATE policies SET active=false WHERE org_id=$1 AND id<>$2', [
+        orgId,
+        id
+      ]);
+    }
+    const res = await client.query<Policy>(
+      `UPDATE policies SET active=$3, version=version+1 WHERE id=$1 AND org_id=$2 RETURNING *`,
+      [id, orgId, active]
+    );
+    return res.rows[0] ?? null;
+  });
 }
 
 export async function listPolicies(orgId: string): Promise<Policy[]> {

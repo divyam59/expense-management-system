@@ -6,7 +6,7 @@ import { AuthUser, Role } from '../src/types';
 
 export async function resetDb(): Promise<void> {
   await query(`TRUNCATE idempotency_keys, notifications, audit_logs, approval_steps,
-    attachments, expense_requests, budgets, policies, users, organizations CASCADE`);
+    attachments, expense_requests, budgets, policies, expense_categories, users, organizations CASCADE`);
 }
 
 export async function makeOrg(name = 'TestCo'): Promise<string> {

@@ -4,10 +4,11 @@ import { runMigrations } from './migrate';
 import { hashPassword } from '../auth/password';
 import { AuthUser, Role } from '../types';
 import * as expenseService from '../modules/expenses/expense.service';
+import { seedDefaults as seedCategories } from '../modules/categories/category.service';
 
 async function truncateAll(): Promise<void> {
   await query(`TRUNCATE idempotency_keys, notifications, audit_logs, approval_steps,
-    attachments, expense_requests, budgets, policies, users, organizations CASCADE`);
+    attachments, expense_requests, budgets, policies, expense_categories, users, organizations CASCADE`);
 }
 
 async function createOrg(name: string): Promise<string> {
@@ -77,6 +78,7 @@ async function seed(): Promise<void> {
   const arjun = await createUser(acme, 'Arjun Verma', 'arjun@acme.test', 'employee', manager.id);
   await createPolicy(acme);
   await createBudget(acme);
+  await seedCategories(acme, (sql, params) => query(sql, params as unknown[]));
 
   // Small reimbursement (single-level: manager) -> approved
   const e1 = await expenseService.createExpense(riya, {
@@ -148,6 +150,7 @@ async function seed(): Promise<void> {
   await createUser(globex, 'Gabe Manager', 'manager@globex.test', 'manager', null);
   await createPolicy(globex);
   await createBudget(globex);
+  await seedCategories(globex, (sql, params) => query(sql, params as unknown[]));
   void gAdmin;
 
   // eslint-disable-next-line no-console

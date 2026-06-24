@@ -24,6 +24,8 @@ export async function createPolicy(orgId: string, body: unknown) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) throw Errors.badRequest('Invalid policy', parsed.error.flatten());
   validateRuleRanges(parsed.data.rulesJson.rules);
+  const existing = await repo.findByName(orgId, parsed.data.name);
+  if (existing) throw Errors.conflict('A policy with this name already exists');
   return repo.insertPolicy({
     id: randomUUID(),
     org_id: orgId,
@@ -47,12 +49,25 @@ export async function updatePolicy(orgId: string, id: string, body: unknown) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) throw Errors.badRequest('Invalid policy', parsed.error.flatten());
   if (parsed.data.rulesJson) validateRuleRanges(parsed.data.rulesJson.rules);
-  const updated = await repo.updatePolicy(orgId, id, {
-    name: parsed.data.name,
-    rules_json: parsed.data.rulesJson,
-    tolerance_percent: parsed.data.tolerancePercent,
-    active: parsed.data.active
+  if (parsed.data.name) {
+    const existing = await repo.findByName(orgId, parsed.data.name);
+    if (existing && existing.id !== id) {
+      throw Errors.conflict('A policy with this name already exists');
+    }
+  }
+
+  const { active, name, rulesJson, tolerancePercent } = parsed.data;
+  // Content fields go through the generic update (which also returns the current
+  // row for an empty body). The active flag is handled separately so it can
+  // enforce the single-active-policy invariant.
+  let updated = await repo.updatePolicy(orgId, id, {
+    name,
+    rules_json: rulesJson,
+    tolerance_percent: tolerancePercent
   });
+  if (active !== undefined) {
+    updated = await repo.setActive(orgId, id, active);
+  }
   if (!updated) throw Errors.notFound('Policy not found');
   return updated;
 }

@@ -56,9 +56,24 @@ export async function startApprovalChain(
   const levels = resolveLevels(rules, Number(expense.base_amount));
   const slaDue = new Date(Date.now() + SLA_HOURS * 3600 * 1000).toISOString();
 
-  let level = 1;
+  // Pre-resolve every approver before mutating anything. If a required role has
+  // no eligible user (e.g. a brand-new org with only an admin and no manager),
+  // fail fast with an actionable message instead of creating a chain that can
+  // never advance.
+  const resolved: { role: Role; approverId: string }[] = [];
   for (const role of levels) {
     const approverId = await resolveApprover(expense.org_id, requester, role);
+    if (!approverId) {
+      throw Errors.unprocessable(
+        `This expense needs a ${role} approval, but there is no eligible ${role} in your organisation yet. ` +
+          `Add a ${role} user under "Users" before submitting.`
+      );
+    }
+    resolved.push({ role, approverId });
+  }
+
+  let level = 1;
+  for (const { role, approverId } of resolved) {
     await stepRepo.insertStep(client, {
       id: randomUUID(),
       org_id: expense.org_id,

@@ -5,6 +5,7 @@ import { metricsMiddleware, renderPrometheus } from '../metrics/metrics';
 import { authRouter, userRouter } from '../modules/users/user.routes';
 import { expenseRouter, approvalRouter } from '../modules/expenses/expense.routes';
 import { policyRouter } from '../modules/policy/policy.routes';
+import { categoryRouter } from '../modules/categories/category.routes';
 import { budgetRouter } from '../modules/budget/budget.routes';
 import { analyticsRouter } from '../modules/analytics/analytics.routes';
 import { attachmentRouter } from '../modules/attachments/attachment.routes';
@@ -25,6 +26,7 @@ export function createApp(): express.Express {
   app.use('/expenses', expenseRouter);
   app.use('/approvals', approvalRouter);
   app.use('/policies', policyRouter);
+  app.use('/categories', categoryRouter);
   app.use('/budgets', budgetRouter);
   app.use('/analytics', analyticsRouter);
   app.use('/attachments', attachmentRouter);

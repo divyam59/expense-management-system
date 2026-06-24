@@ -32,6 +32,16 @@ CREATE TABLE IF NOT EXISTS policies (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Per-org expense categories (admin-managed). Expenses reference the name.
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id         UUID PRIMARY KEY,
+  org_id     UUID NOT NULL REFERENCES organizations(id),
+  name       VARCHAR(80) NOT NULL,
+  active     BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (org_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS budgets (
   id           UUID PRIMARY KEY,
   org_id       UUID NOT NULL REFERENCES organizations(id),

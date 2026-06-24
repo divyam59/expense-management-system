@@ -88,17 +88,34 @@ describe('expense lifecycle & workflow', () => {
   });
 
   it('prevents self-approval', async () => {
-    // Make the manager the requester of their own expense
+    // A second manager files their own expense. It routes to the *other*
+    // (original) manager as approver, so the requester is never their own
+    // approver — any attempt by them to approve it is forbidden.
+    const mgr2 = await makeUser(fx.orgId, 'manager', { email: 'mgr2@test.local' });
+    const draft = await request(app)
+      .post('/expenses')
+      .set('Authorization', bearer(mgr2))
+      .send({ type: 'reimbursement', amount: 3000, currency: 'INR' });
+    await request(app).post(`/expenses/${draft.body.id}/submit`).set('Authorization', bearer(mgr2));
+    const res = await request(app)
+      .post(`/expenses/${draft.body.id}/approve`)
+      .set('Authorization', bearer(mgr2))
+      .send({ reason: 'self' });
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks submit when no eligible approver exists', async () => {
+    // Single-manager org: the manager has no one else to approve their own
+    // small expense, so submit fails fast with a clear message.
     const draft = await request(app)
       .post('/expenses')
       .set('Authorization', bearer(fx.manager))
       .send({ type: 'reimbursement', amount: 3000, currency: 'INR' });
-    await request(app).post(`/expenses/${draft.body.id}/submit`).set('Authorization', bearer(fx.manager));
     const res = await request(app)
-      .post(`/expenses/${draft.body.id}/approve`)
-      .set('Authorization', bearer(fx.manager))
-      .send({ reason: 'self' });
-    expect(res.status).toBe(403);
+      .post(`/expenses/${draft.body.id}/submit`)
+      .set('Authorization', bearer(fx.manager));
+    expect(res.status).toBe(422);
+    expect(res.body.error.message).toMatch(/no eligible/i);
   });
 
   it('rejects with a mandatory reason and notifies requester', async () => {

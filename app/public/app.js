@@ -218,22 +218,59 @@ function go(view) {
   }[view])();
 }
 
+// ---------- Categories ----------
+async function loadCategories() {
+  try {
+    state.categories = await api('/categories');
+  } catch {
+    state.categories = state.categories || [];
+  }
+  return state.categories || [];
+}
+
+function categoryOptions(selected) {
+  const cats = state.categories || [];
+  let opts = cats.map((c) => `<option ${c.name === selected ? 'selected' : ''}>${c.name}</option>`).join('');
+  // Keep legacy/foreign values selectable so existing drafts still display.
+  if (selected && !cats.some((c) => c.name === selected)) {
+    opts = `<option selected>${selected}</option>` + opts;
+  }
+  return opts || '<option value="">No categories yet — add one under Policies</option>';
+}
+
 // ---------- Expenses ----------
 async function viewExpenses() {
+  await loadCategories();
   const v = document.getElementById('view');
   v.innerHTML = `
     <div class="panel">
       <h3>Create expense</h3>
-      <div class="flex">
-        <select id="ftype">
-          <option value="reimbursement">Reimbursement (self-paid)</option>
-          <option value="company_paid">Company paid (direct)</option>
-        </select>
-        <input id="fcat" placeholder="category" value="travel" />
-        <input id="famount" type="number" placeholder="amount" value="3000" />
-        <select id="fcur"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option></select>
+      <p class="muted small">Create a draft, then submit it to start the approval flow.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="ftype">Expense type</label>
+          <select id="ftype">
+            <option value="reimbursement">Reimbursement — you paid, company pays you back</option>
+            <option value="company_paid">Company paid — billed directly to the company</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="fcat">Category</label>
+          <select id="fcat">${categoryOptions()}</select>
+        </div>
+        <div class="field">
+          <label for="famount">Amount</label>
+          <input id="famount" type="number" min="0" step="0.01" placeholder="e.g. 2500" />
+        </div>
+        <div class="field">
+          <label for="fcur">Currency</label>
+          <select id="fcur"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option></select>
+        </div>
       </div>
-      <input id="fdesc" placeholder="description" value="Business expense" />
+      <div class="field">
+        <label for="fdesc">Description</label>
+        <input id="fdesc" placeholder="What was this expense for? (e.g. Client dinner, Mumbai)" />
+      </div>
       <p id="expErr" class="form-err"></p>
       <button class="primary" id="createBtn">Create draft</button>
     </div>
@@ -272,7 +309,12 @@ const emptyRow = (n) => `<tr><td colspan="${n}" class="muted">No records</td></t
 async function createExpense() {
   const err = document.getElementById('expErr');
   err.textContent = '';
+  const category = document.getElementById('fcat').value;
   const amount = Number(document.getElementById('famount').value);
+  if (!category) {
+    err.textContent = 'Pick a category. An admin can add categories under Policies.';
+    return;
+  }
   if (!(amount > 0)) {
     err.textContent = 'Amount must be greater than 0.';
     return;
@@ -282,13 +324,15 @@ async function createExpense() {
       method: 'POST',
       body: JSON.stringify({
         type: document.getElementById('ftype').value,
-        category: document.getElementById('fcat').value,
+        category,
         amount,
         currency: document.getElementById('fcur').value,
         description: document.getElementById('fdesc').value
       })
     });
     toast('Draft created');
+    document.getElementById('famount').value = '';
+    document.getElementById('fdesc').value = '';
     loadExpenseList();
   } catch (e) {
     err.textContent = e.message;
@@ -321,16 +365,31 @@ async function showDetail(id) {
         editable
           ? `<div id="editForm" class="edit-form hidden">
         <h3>Edit expense</h3>
-        <div class="flex">
-          <input id="eAmount" type="number" value="${e.amount}" />
-          <select id="eCur">${['INR', 'USD', 'EUR', 'GBP']
-            .map((c) => `<option ${c === e.currency ? 'selected' : ''}>${c}</option>`)
-            .join('')}</select>
-          <input id="eCat" value="${e.category}" />
+        <div class="form-grid">
+          <div class="field">
+            <label for="eAmount">Amount</label>
+            <input id="eAmount" type="number" min="0" step="0.01" value="${e.amount}" />
+          </div>
+          <div class="field">
+            <label for="eCur">Currency</label>
+            <select id="eCur">${['INR', 'USD', 'EUR', 'GBP']
+              .map((c) => `<option ${c === e.currency ? 'selected' : ''}>${c}</option>`)
+              .join('')}</select>
+          </div>
+          <div class="field">
+            <label for="eCat">Category</label>
+            <select id="eCat">${categoryOptions(e.category)}</select>
+          </div>
         </div>
-        <input id="eDesc" value="${e.description || ''}" placeholder="description" />
+        <div class="field">
+          <label for="eDesc">Description</label>
+          <input id="eDesc" value="${e.description || ''}" placeholder="What was this expense for?" />
+        </div>
         <p id="editErr" class="form-err"></p>
-        <button class="primary" onclick="saveEdit('${id}')">Save changes</button>
+        <div class="row">
+          <button class="primary" onclick="saveEdit('${id}')">Save changes</button>
+          <button class="ghost" onclick="toggleEdit('${id}')">Cancel</button>
+        </div>
       </div>`
           : ''
       }
@@ -532,22 +591,58 @@ function chartOpts() {
   };
 }
 
-// ---------- Policies ----------
-const POLICY_TEMPLATE = JSON.stringify(
-  {
-    currency: 'INR',
-    rules: [
-      { min: 0, max: 5000, levels: ['manager'] },
-      { min: 5001, max: 50000, levels: ['manager', 'finance'] },
-      { min: 50001, max: null, levels: ['manager', 'finance', 'admin'] }
-    ]
-  },
-  null,
-  2
-);
+// ---------- Policies (visual builder, no JSON) ----------
+const APPROVER_ROLES = ['manager', 'finance', 'admin'];
+const STANDARD_BANDS = [
+  { min: 0, max: 5000, levels: ['manager'] },
+  { min: 5001, max: 50000, levels: ['manager', 'finance'] },
+  { min: 50001, max: null, levels: ['manager', 'finance', 'admin'] }
+];
+let ruleRowSeq = 0;
+
+function ruleRowHtml(rule) {
+  const rid = `rr${ruleRowSeq++}`;
+  const levels = (rule && rule.levels) || [];
+  const checks = APPROVER_ROLES.map(
+    (r) =>
+      `<label class="chk"><input type="checkbox" data-role="${r}" ${
+        levels.includes(r) ? 'checked' : ''
+      }/> ${r}</label>`
+  ).join('');
+  return `<div class="rule-row" data-rid="${rid}">
+    <div class="field"><label>From (₹)</label><input class="rMin" type="number" min="0" value="${
+      rule ? rule.min : 0
+    }" /></div>
+    <div class="field"><label>To (₹, blank = no limit)</label><input class="rMax" type="number" min="0" placeholder="∞" value="${
+      rule && rule.max != null ? rule.max : ''
+    }" /></div>
+    <div class="field grow"><label>Must be approved by (in this order)</label><div class="chk-row">${checks}</div></div>
+    <button class="ghost small rDel" title="Remove this band">✕</button>
+  </div>`;
+}
+
+function addRuleRow(rule) {
+  const c = document.getElementById('ruleRows');
+  if (!c) return;
+  c.insertAdjacentHTML('beforeend', ruleRowHtml(rule));
+  const row = c.lastElementChild;
+  row.querySelector('.rDel').onclick = () => row.remove();
+}
+
+function collectRules() {
+  return [...document.querySelectorAll('#ruleRows .rule-row')].map((row) => {
+    const min = Number(row.querySelector('.rMin').value);
+    const maxRaw = row.querySelector('.rMax').value.trim();
+    const max = maxRaw === '' ? null : Number(maxRaw);
+    const levels = [...row.querySelectorAll('input[data-role]:checked')].map(
+      (c) => c.dataset.role
+    );
+    return { min, max, levels };
+  });
+}
 
 async function viewPolicies() {
-  const policies = await api('/policies');
+  const [policies, cats] = await Promise.all([api('/policies'), loadCategories()]);
   const v = document.getElementById('view');
   const canManage = ['finance', 'admin'].includes(state.user.role);
   v.innerHTML = `
@@ -555,56 +650,150 @@ async function viewPolicies() {
       canManage
         ? `<div class="panel">
       <h3>Create approval policy</h3>
-      <div class="flex">
-        <input id="pName" placeholder="policy name" value="Travel policy" />
-        <input id="pTol" type="number" placeholder="tolerance %" value="10" />
+      <p class="muted small">Only one policy is active at a time — the active policy decides who approves each expense based on its amount. Creating a policy makes it the active one.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="pName">Policy name</label>
+          <input id="pName" placeholder="e.g. Standard approval policy" />
+        </div>
+        <div class="field">
+          <label for="pTol">Tolerance % <span class="muted">(allowed variance for company-paid amounts)</span></label>
+          <input id="pTol" type="number" min="0" max="100" placeholder="0" />
+        </div>
       </div>
-      <label class="muted small">Rules (JSON: amount range → approver roles)</label>
-      <textarea id="pRules" rows="9">${POLICY_TEMPLATE}</textarea>
+      <label class="lbl">Approval bands — for each amount range, tick who must approve</label>
+      <div id="ruleRows"></div>
+      <div class="row" style="margin:8px 0">
+        <button class="ghost small" id="addBandBtn">+ Add band</button>
+        <button class="ghost small" id="stdBtn">Use standard template</button>
+      </div>
       <p id="polErr" class="form-err"></p>
       <button class="primary" id="createPolicyBtn">Create policy</button>
     </div>`
         : ''
     }
     <div class="panel"><h3>Approval policies</h3>
-    <table><thead><tr><th>Name</th><th>Rules (amount → levels)</th><th>Tolerance</th><th>Active</th></tr></thead>
+    <p class="muted small">The <strong>active</strong> policy is used for all new approvals.</p>
+    <table><thead><tr><th>Name</th><th>Bands (amount → approvers)</th><th>Tolerance</th><th>Status</th>${
+      canManage ? '<th></th>' : ''
+    }</tr></thead>
     <tbody>${policies
       .map(
-        (p) => `<tr><td>${p.name}</td>
-      <td>${p.rules_json.rules.map((r) => `${r.min}–${r.max ?? '∞'}: ${r.levels.join(' → ')}`).join('<br/>')}</td>
-      <td>${p.tolerance_percent}%</td><td>${p.active}</td></tr>`
+        (p) => `<tr class="${p.active ? 'active-row' : ''}"><td>${p.name}</td>
+      <td>${p.rules_json.rules
+        .map((r) => `₹${r.min}–${r.max ?? '∞'}: ${r.levels.join(' → ')}`)
+        .join('<br/>')}</td>
+      <td>${p.tolerance_percent}%</td>
+      <td>${
+        p.active
+          ? '<span class="pill approved">active</span>'
+          : '<span class="pill draft">inactive</span>'
+      }</td>
+      ${
+        canManage
+          ? `<td><button class="ghost small" onclick="togglePolicy('${p.id}', ${!p.active})">${
+              p.active ? 'Deactivate' : 'Activate'
+            }</button></td>`
+          : ''
+      }</tr>`
       )
-      .join('')}</tbody></table></div>`;
-  if (canManage) document.getElementById('createPolicyBtn').onclick = createPolicy;
+      .join('')}</tbody></table></div>
+    ${
+      canManage
+        ? `<div class="panel">
+      <h3>Expense categories</h3>
+      <p class="muted small">Employees choose from these when creating an expense.</p>
+      <div class="chip-list">${
+        cats
+          .map(
+            (c) =>
+              `<span class="chip">${c.name} <button title="Remove" onclick="removeCategory('${c.id}')">✕</button></span>`
+          )
+          .join('') || '<span class="muted small">No categories yet.</span>'
+      }</div>
+      <div class="row" style="margin-top:10px">
+        <input id="newCat" placeholder="New category name (e.g. Marketing)" />
+        <button class="primary" id="addCatBtn">Add category</button>
+      </div>
+      <p id="catErr" class="form-err"></p>
+    </div>`
+        : ''
+    }`;
+  if (canManage) {
+    STANDARD_BANDS.forEach((b) => addRuleRow(b));
+    document.getElementById('addBandBtn').onclick = () => addRuleRow({ min: 0, max: null, levels: [] });
+    document.getElementById('stdBtn').onclick = () => {
+      document.getElementById('ruleRows').innerHTML = '';
+      STANDARD_BANDS.forEach((b) => addRuleRow(b));
+    };
+    document.getElementById('createPolicyBtn').onclick = createPolicy;
+    document.getElementById('addCatBtn').onclick = addCategory;
+  }
 }
 
 async function createPolicy() {
   const err = document.getElementById('polErr');
   err.textContent = '';
-  let rulesJson;
-  try {
-    rulesJson = JSON.parse(document.getElementById('pRules').value);
-  } catch {
-    err.textContent = 'Rules must be valid JSON.';
-    return;
-  }
-  if (!rulesJson || !Array.isArray(rulesJson.rules) || rulesJson.rules.length === 0) {
-    err.textContent = 'Rules JSON must contain a non-empty "rules" array.';
-    return;
+  const name = document.getElementById('pName').value.trim();
+  if (!name) return (err.textContent = 'Give the policy a name.');
+  const rules = collectRules();
+  if (!rules.length) return (err.textContent = 'Add at least one approval band.');
+  for (const r of rules) {
+    if (!(r.min >= 0)) return (err.textContent = 'Each band needs a valid "From" amount.');
+    if (r.max !== null && r.max < r.min)
+      return (err.textContent = `A band has "To" (${r.max}) below "From" (${r.min}).`);
+    if (!r.levels.length)
+      return (err.textContent = 'Every band must have at least one approver ticked.');
   }
   try {
     await api('/policies', {
       method: 'POST',
       body: JSON.stringify({
-        name: document.getElementById('pName').value,
+        name,
         tolerancePercent: Number(document.getElementById('pTol').value) || 0,
-        rulesJson
+        rulesJson: { rules }
       })
     });
-    toast('Policy created');
+    toast('Policy created and activated');
     viewPolicies();
   } catch (e) {
     err.textContent = e.message;
+  }
+}
+
+async function togglePolicy(id, active) {
+  try {
+    await api(`/policies/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) });
+    toast(active ? 'Policy activated' : 'Policy deactivated');
+    viewPolicies();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function addCategory() {
+  const err = document.getElementById('catErr');
+  err.textContent = '';
+  const name = document.getElementById('newCat').value.trim();
+  if (!name) return (err.textContent = 'Enter a category name.');
+  try {
+    await api('/categories', { method: 'POST', body: JSON.stringify({ name }) });
+    state.categories = null;
+    await loadCategories();
+    viewPolicies();
+  } catch (e) {
+    err.textContent = e.message;
+  }
+}
+
+async function removeCategory(id) {
+  try {
+    await api(`/categories/${id}`, { method: 'DELETE' });
+    state.categories = null;
+    await loadCategories();
+    viewPolicies();
+  } catch (e) {
+    toast(e.message);
   }
 }
 
@@ -612,26 +801,54 @@ async function createPolicy() {
 async function viewUsers() {
   const users = await api('/users');
   const managers = users.filter((u) => u.role === 'manager' || u.role === 'admin');
+  const hasManager = users.some((u) => u.role === 'manager');
+  const needsSetup = users.length <= 1 || !hasManager;
   const v = document.getElementById('view');
   v.innerHTML = `
+    ${
+      needsSetup
+        ? `<div class="banner">
+      <strong>Finish setting up your organisation</strong>
+      <p>Expenses can't be approved until there's someone to approve them. Before you (or anyone) submits an expense:</p>
+      <ol>
+        <li>Add at least one <strong>manager</strong>${hasManager ? ' ✓' : ''}.</li>
+        <li>Add your <strong>employees</strong> and assign them to a manager.</li>
+        <li>Review the active approval policy under <strong>Policies</strong>.</li>
+      </ol>
+    </div>`
+        : ''
+    }
     <div class="panel">
       <h3>Add employee / user</h3>
-      <div class="flex">
-        <input id="uName" placeholder="name" />
-        <input id="uEmail" type="email" placeholder="email" />
-      </div>
-      <div class="flex">
-        <input id="uPass" type="password" placeholder="password (min 6)" />
-        <select id="uRole">
-          <option value="employee">employee</option>
-          <option value="manager">manager</option>
-          <option value="finance">finance</option>
-          <option value="admin">admin</option>
-        </select>
-        <select id="uMgr">
-          <option value="">— manager (optional) —</option>
-          ${managers.map((m) => `<option value="${m.id}">${m.name} (${m.role})</option>`).join('')}
-        </select>
+      <div class="form-grid">
+        <div class="field">
+          <label for="uName">Full name</label>
+          <input id="uName" placeholder="e.g. Priya Nair" />
+        </div>
+        <div class="field">
+          <label for="uEmail">Email (used to log in)</label>
+          <input id="uEmail" type="email" placeholder="name@company.com" />
+        </div>
+        <div class="field">
+          <label for="uPass">Temporary password</label>
+          <input id="uPass" type="password" placeholder="at least 6 characters" />
+        </div>
+        <div class="field">
+          <label for="uRole">Role</label>
+          <select id="uRole">
+            <option value="employee">Employee — submits expenses</option>
+            <option value="manager">Manager — approves their team's expenses</option>
+            <option value="finance">Finance — approves & manages policies</option>
+            <option value="admin">Admin — full access</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="uMgr">Reports to (manager)</label>
+          <select id="uMgr">
+            <option value="">— none —</option>
+            ${managers.map((m) => `<option value="${m.id}">${m.name} (${m.role})</option>`).join('')}
+          </select>
+        </div>
       </div>
       <p id="userErr" class="form-err"></p>
       <button class="primary" id="addUserBtn">Create user</button>
@@ -759,7 +976,11 @@ async function autoRefresh() {
   try {
     if (state.view === 'expenses') {
       await loadExpenseList();
-      if (state.openExpenseId) await showDetail(state.openExpenseId);
+      // Don't refresh the detail panel while the user is editing — it would
+      // wipe their open edit form mid-typing.
+      const ef = document.getElementById('editForm');
+      const editing = ef && !ef.classList.contains('hidden');
+      if (state.openExpenseId && !editing) await showDetail(state.openExpenseId);
     } else if (state.view === 'approvals') {
       await loadApprovals();
     }
@@ -824,6 +1045,8 @@ window.toggleEdit = toggleEdit;
 window.saveEdit = saveEdit;
 window.openNotif = openNotif;
 window.markAllNotifs = markAllNotifs;
+window.togglePolicy = togglePolicy;
+window.removeCategory = removeCategory;
 
 // ---------- Bootstrap (restore session on refresh) ----------
 (function bootstrap() {
