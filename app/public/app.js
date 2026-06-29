@@ -829,11 +829,19 @@ async function viewBudgets() {
 async function loadBudgets() {
   const body = document.getElementById('budBody');
   if (!body) return;
-  const [users, budgets, spend] = await Promise.all([
-    api('/users'),
-    api('/budgets'),
-    api('/budgets/spend')
-  ]);
+  let users, budgets, spend;
+  try {
+    [users, budgets, spend] = await Promise.all([
+      api('/users'),
+      api('/budgets'),
+      api('/budgets/spend')
+    ]);
+  } catch (e) {
+    body.innerHTML = `<p style="color:#ef4d5a"><b>Couldn't load budgets:</b> ${esc(e.message)}</p>
+      <p class="muted small">If this says the route was not found, the server is
+      running older code — restart it (<code>npm run dev</code>) and refresh.</p>`;
+    return;
+  }
   const orgDefault = budgets.find((b) => b.scope === 'org' && b.period === 'monthly');
   const userMonthly = {};
   budgets
