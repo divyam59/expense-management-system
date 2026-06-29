@@ -36,6 +36,15 @@
         <!-- Sign up (new org + first admin) -->
         <div id="signupForm" class="hidden">
           <input id="suOrg" placeholder="Organization name (e.g. Acme Corp)" />
+          <label for="suCur" class="muted small">Base currency (all reporting is in this)</label>
+          <select id="suCur">
+            <option value="INR">INR — ₹ Indian Rupee</option>
+            <option value="USD">USD — $ US Dollar</option>
+            <option value="EUR">EUR — € Euro</option>
+            <option value="GBP">GBP — £ British Pound</option>
+            <option value="AED">AED — د.إ UAE Dirham</option>
+            <option value="SGD">SGD — S$ Singapore Dollar</option>
+          </select>
           <input id="suName" placeholder="Your full name (you'll be the admin)" />
           <input id="suEmail" placeholder="Your work email" />
           <input id="suPass" type="password" placeholder="Create a password (min 6 chars)" />

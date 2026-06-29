@@ -22,6 +22,14 @@ budgetRouter.get(
   })
 );
 
+budgetRouter.get(
+  '/spend',
+  requirePermission('budget:manage'),
+  asyncHandler(async (req, res) => {
+    res.json(await service.monthlySpend(req.user!.org_id));
+  })
+);
+
 budgetRouter.post(
   '/',
   requirePermission('budget:manage'),

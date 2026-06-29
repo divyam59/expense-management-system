@@ -2,6 +2,7 @@ const state = {
   accessToken: null,
   refreshToken: null,
   user: null,
+  org: null,
   charts: {},
   view: null,
   openExpenseId: null,
@@ -16,7 +17,8 @@ function persistAuth() {
     JSON.stringify({
       accessToken: state.accessToken,
       refreshToken: state.refreshToken,
-      user: state.user
+      user: state.user,
+      org: state.org
     })
   );
 }
@@ -29,13 +31,14 @@ function loadAuth() {
     state.accessToken = a.accessToken;
     state.refreshToken = a.refreshToken;
     state.user = a.user;
+    state.org = a.org || null;
     return true;
   } catch {
     return false;
   }
 }
 function clearAuth() {
-  state.accessToken = state.refreshToken = state.user = null;
+  state.accessToken = state.refreshToken = state.user = state.org = null;
   localStorage.removeItem(AUTH_KEY);
 }
 
@@ -57,6 +60,7 @@ function tryRefresh() {
         state.accessToken = d.accessToken;
         state.refreshToken = d.refreshToken;
         if (d.user) state.user = d.user;
+        if (d.organization) state.org = d.organization;
         persistAuth();
         return true;
       } catch {
@@ -121,7 +125,24 @@ function toast(msg, type = 'info') {
 }
 const toastErr = (msg) => toast(msg, 'error');
 
-const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+// Supported currencies (must match the backend FX table in currency.ts).
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
+const curOptions = (sel) =>
+  CURRENCIES.map((c) => `<option ${c === sel ? 'selected' : ''}>${c}</option>`).join('');
+// The org's base/reporting currency (every expense's base_amount is in it).
+const orgCur = () => (state.org && state.org.base_currency) || 'INR';
+function fmt(n, cur) {
+  const currency = cur || orgCur();
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2
+    }).format(Number(n || 0));
+  } catch {
+    return `${currency} ${Number(n || 0).toLocaleString()}`;
+  }
+}
 const pill = (s) => `<span class="pill ${s}">${s.replace('_', ' ')}</span>`;
 const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const esc = (s) =>
@@ -161,6 +182,7 @@ async function login(email, password) {
   state.accessToken = data.accessToken;
   state.refreshToken = data.refreshToken;
   state.user = data.user;
+  state.org = data.organization || null;
   persistAuth();
   enterApp();
   go('expenses');
@@ -174,12 +196,14 @@ async function signup() {
       orgName: document.getElementById('suOrg').value,
       adminName: document.getElementById('suName').value,
       email: document.getElementById('suEmail').value,
-      password: document.getElementById('suPass').value
+      password: document.getElementById('suPass').value,
+      baseCurrency: document.getElementById('suCur').value
     })
   });
   state.accessToken = data.accessToken;
   state.refreshToken = data.refreshToken;
   state.user = data.user;
+  state.org = data.organization || null;
   persistAuth();
   enterApp();
   go('users');
@@ -213,6 +237,7 @@ function buildNav() {
     { id: 'approvals', label: 'Approvals', roles: ['manager', 'finance', 'admin'] },
     { id: 'dashboard', label: 'Dashboard', roles: ['manager', 'finance', 'admin'] },
     { id: 'policies', label: 'Policies', roles: ['finance', 'admin'] },
+    { id: 'budgets', label: 'Budgets', roles: ['admin'] },
     { id: 'users', label: 'Users', roles: ['admin'] }
   ];
   const nav = document.getElementById('nav');
@@ -237,6 +262,7 @@ function go(view) {
     approvals: viewApprovals,
     dashboard: viewDashboard,
     policies: viewPolicies,
+    budgets: viewBudgets,
     users: viewUsers
   }[view])();
 }
@@ -287,7 +313,7 @@ async function viewExpenses() {
         </div>
         <div class="field">
           <label for="fcur">Currency</label>
-          <select id="fcur"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option></select>
+          <select id="fcur">${curOptions(orgCur())}</select>
         </div>
       </div>
       <div class="field">
@@ -375,7 +401,7 @@ function renderExpenseRows() {
 function rowExpense(e) {
   return `<tr${e.id === state.openExpenseId ? ' class="sel"' : ''}>
     <td>${e.type.replace('_', ' ')}</td><td>${e.category}</td>
-    <td>${fmt(e.base_amount)} ${e.currency !== 'INR' ? `<span class="muted small">(${e.amount} ${e.currency})</span>` : ''}</td>
+    <td>${fmt(e.base_amount)} ${e.currency !== orgCur() ? `<span class="muted small">(${e.amount} ${e.currency})</span>` : ''}</td>
     <td>${pill(e.status)}</td>
     <td><button data-exp="${e.id}">View</button></td></tr>`;
 }
@@ -529,7 +555,7 @@ async function showDetail(id) {
           <div class="k">Status</div><div>${pill(e.status)}</div>
           <div class="k">Type</div><div>${e.type.replace('_', ' ')}</div>
           <div class="k">Amount</div><div>${fmt(e.base_amount)} ${
-            e.currency !== 'INR' ? `<span class="muted small">(${e.amount} ${e.currency})</span>` : ''
+            e.currency !== orgCur() ? `<span class="muted small">(${e.amount} ${e.currency})</span>` : ''
           }</div>
           <div class="k">Category</div><div>${e.category}</div>
           <div class="k">Description</div><div>${e.description || '<span class="muted">—</span>'}</div>
@@ -546,9 +572,7 @@ async function showDetail(id) {
             </div>
             <div class="field">
               <label for="eCur">Currency</label>
-              <select id="eCur">${['INR', 'USD', 'EUR', 'GBP']
-                .map((c) => `<option ${c === e.currency ? 'selected' : ''}>${c}</option>`)
-                .join('')}</select>
+              <select id="eCur">${curOptions(e.currency)}</select>
             </div>
             <div class="field">
               <label for="eCat">Category</label>
@@ -787,6 +811,94 @@ async function decide(id, action) {
     toastErr(e.message);
   }
 }
+
+// ---------- Budgets (per-user monthly limits) ----------
+async function viewBudgets() {
+  const v = document.getElementById('view');
+  v.innerHTML = `<div class="panel"><div class="row between">
+      <h3>Monthly budgets</h3><button id="refreshBud" class="ghost small">↻ Refresh</button></div>
+    <p class="muted small">Budgets are enforced <b>per person</b>: each user's own
+      approved + in-review spend this month must stay within their limit. A user
+      with no personal limit falls back to the org default below. Amounts are in
+      the org currency (${orgCur()}).</p>
+    <div id="budBody">Loading…</div></div>`;
+  document.getElementById('refreshBud').onclick = loadBudgets;
+  await loadBudgets();
+}
+
+async function loadBudgets() {
+  const body = document.getElementById('budBody');
+  if (!body) return;
+  const [users, budgets, spend] = await Promise.all([
+    api('/users'),
+    api('/budgets'),
+    api('/budgets/spend')
+  ]);
+  const orgDefault = budgets.find((b) => b.scope === 'org' && b.period === 'monthly');
+  const userMonthly = {};
+  budgets
+    .filter((b) => b.scope === 'user' && b.period === 'monthly' && b.user_id)
+    .forEach((b) => (userMonthly[b.user_id] = Number(b.limit_amount)));
+
+  const rows = users
+    .filter((u) => u.is_active)
+    .map((u) => {
+      const limit = userMonthly[u.id];
+      const effective = limit ?? (orgDefault ? Number(orgDefault.limit_amount) : null);
+      const spent = Number(spend[u.id] || 0);
+      const pct = effective ? Math.round((spent / effective) * 100) : 0;
+      const warn = effective && spent > effective ? ' style="color:#ef4d5a"' : '';
+      return `<tr>
+        <td>${esc(u.name)}<div class="muted small">${esc(u.email)} · ${u.role}</div></td>
+        <td${warn}>${fmt(spent)}</td>
+        <td>${effective != null ? fmt(effective) : '<span class="muted">none</span>'}
+            ${limit == null && effective != null ? '<span class="muted small"> (org default)</span>' : ''}</td>
+        <td>${effective ? `<span class="muted small">${pct}%</span>` : ''}</td>
+        <td class="row">
+          <input id="bud_${u.id}" type="number" min="0" step="0.01"
+                 placeholder="${limit ?? ''}" style="width:120px" />
+          <button class="ghost small" onclick="setUserBudget('${u.id}')">Set</button>
+        </td></tr>`;
+    })
+    .join('');
+
+  body.innerHTML = `
+    <div class="muted small" style="margin-bottom:8px">
+      Org default monthly budget:
+      <b>${orgDefault ? fmt(Number(orgDefault.limit_amount)) : 'not set'}</b>
+    </div>
+    <table>
+      <thead><tr><th>Employee</th><th>Spent (this month)</th><th>Monthly limit</th>
+        <th>Used</th><th>Set personal limit</th></tr></thead>
+      <tbody>${rows || emptyRow(5)}</tbody>
+    </table>`;
+}
+
+async function setUserBudget(userId) {
+  const input = document.getElementById(`bud_${userId}`);
+  const val = Number(input && input.value);
+  if (!val || val <= 0) {
+    toastErr('Enter a positive monthly limit.');
+    return;
+  }
+  try {
+    await api('/budgets', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId,
+        scope: 'user',
+        period: 'monthly',
+        limitAmount: val,
+        currency: orgCur()
+      })
+    });
+    toast('Budget set');
+    loadBudgets();
+  } catch (e) {
+    toastErr(e.message);
+  }
+}
+window.setUserBudget = setUserBudget;
 
 // ---------- Dashboard ----------
 async function viewDashboard() {
@@ -1137,7 +1249,8 @@ async function viewUsers() {
       <button class="primary" id="addUserBtn">Create user</button>
     </div>
     <div class="panel"><h3>Users in your organization</h3>
-    <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <p class="muted small">Change a user's role or who they report to inline — useful if you added an employee before their manager existed.</p>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Reports to</th><th>Status</th><th></th></tr></thead>
     <tbody>${users
       .map((u) => {
         const inactive = u.is_active === false;
@@ -1150,14 +1263,46 @@ async function viewUsers() {
           : `<button class="ghost small ${inactive ? '' : 'danger'}" onclick="toggleUser('${u.id}', ${inactive})">${
               inactive ? 'Reactivate' : 'Deactivate'
             }</button>`;
+        const roleSel = `<select class="row-edit" ${
+          inactive || isSelf ? 'disabled' : ''
+        } title="${isSelf ? "You can't change your own role" : 'Change role'}"
+          onchange="updateUserField('${u.id}',{role:this.value})">
+          ${['employee', 'manager', 'finance', 'admin']
+            .map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r}</option>`)
+            .join('')}
+        </select>`;
+        const mgrSel = `<select class="row-edit" ${inactive ? 'disabled' : ''} title="Reports to"
+          onchange="updateUserField('${u.id}',{managerId:this.value||null})">
+          <option value="">— none —</option>
+          ${managers
+            .filter((m) => m.id !== u.id)
+            .map(
+              (m) =>
+                `<option value="${m.id}" ${u.manager_id === m.id ? 'selected' : ''}>${esc(
+                  m.name
+                )} (${m.role})</option>`
+            )
+            .join('')}
+        </select>`;
         return `<tr class="${inactive ? 'inactive-user' : ''}">
-        <td>${u.name}</td><td>${u.email}</td>
-        <td><span class="small">${u.role}</span></td>
+        <td>${esc(u.name)}</td><td>${esc(u.email)}</td>
+        <td>${roleSel}</td>
+        <td>${mgrSel}</td>
         <td>${statusPill}</td>
         <td>${action}</td></tr>`;
       })
       .join('')}</tbody></table></div>`;
   document.getElementById('addUserBtn').onclick = createUser;
+}
+
+async function updateUserField(id, patch) {
+  try {
+    await api(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+    toast('User updated');
+    viewUsers();
+  } catch (e) {
+    toastErr(e.message);
+  }
 }
 
 async function toggleUser(id, activate) {
@@ -1364,6 +1509,7 @@ window.removeCategory = removeCategory;
 window.closeDetail = closeDetail;
 window.switchDetailTab = switchDetailTab;
 window.toggleUser = toggleUser;
+window.updateUserField = updateUserField;
 window.uploadBill = uploadBill;
 window.openBill = openBill;
 window.openExpenseBills = openExpenseBills;

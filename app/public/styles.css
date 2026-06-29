@@ -241,6 +241,14 @@ tr.active-row td { background: #16271c; }
 
 /* Deactivated users */
 tr.inactive-user td { opacity: 0.55; }
+select.row-edit {
+  width: auto;
+  min-width: 130px;
+  margin: 0;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+select.row-edit:disabled { opacity: 0.5; cursor: not-allowed; }
 button.danger { color: var(--red); border-color: transparent; }
 button.danger:hover { border-color: var(--red); }
 

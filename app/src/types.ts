@@ -10,6 +10,13 @@ export type ExpenseStatus =
   | 'withdrawn';
 export type StepStatus = 'pending' | 'approved' | 'rejected' | 'skipped';
 
+export interface Organization {
+  id: string;
+  name: string;
+  base_currency: string;
+  created_at: string;
+}
+
 export interface User {
   id: string;
   org_id: string;

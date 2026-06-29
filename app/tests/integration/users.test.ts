@@ -46,6 +46,32 @@ describe('users', () => {
     expect(upd.body.name).toBe('Renamed Emp');
   });
 
+  it('admin can assign / change / clear an employee manager after creation', async () => {
+    // Employee created BEFORE any manager exists -> no manager.
+    const emp = await request(app)
+      .post('/users')
+      .set('Authorization', bearer(fx.admin))
+      .send({ name: 'No Mgr', email: 'nomgr@test.local', password: 'secret1', role: 'employee' });
+    expect(emp.status).toBe(201);
+    expect(emp.body.manager_id ?? null).toBeNull();
+
+    // Later: assign them to an existing manager.
+    const assigned = await request(app)
+      .patch(`/users/${emp.body.id}`)
+      .set('Authorization', bearer(fx.admin))
+      .send({ managerId: fx.manager.id });
+    expect(assigned.status).toBe(200);
+    expect(assigned.body.manager_id).toBe(fx.manager.id);
+
+    // And can be cleared back to none.
+    const cleared = await request(app)
+      .patch(`/users/${emp.body.id}`)
+      .set('Authorization', bearer(fx.admin))
+      .send({ managerId: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.manager_id ?? null).toBeNull();
+  });
+
   it('validates user creation payload', async () => {
     const res = await request(app)
       .post('/users')

@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "ts-node src/db/migrate.ts",
     "seed": "ts-node src/db/seed.ts",
+    "seed:minimal": "ts-node src/db/seed-minimal.ts",
     "setup": "npm run migrate && npm run seed",
     "test": "jest --runInBand",
     "test:watch": "jest --runInBand --watch",

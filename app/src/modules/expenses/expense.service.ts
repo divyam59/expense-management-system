@@ -9,6 +9,7 @@ import * as repo from './expense.repo';
 import * as stepRepo from '../workflow/approval.repo';
 import * as userRepo from '../users/user.repo';
 import * as policyRepo from '../policy/policy.repo';
+import * as orgRepo from '../orgs/org.repo';
 import * as engine from '../workflow/workflow.engine';
 import { recordAudit, getHistory } from '../audit/audit.service';
 import { checkBudget } from '../budget/budget.service';
@@ -21,8 +22,6 @@ const createSchema = z.object({
   amount: z.number().positive(),
   currency: z.string().default('INR')
 });
-
-const BASE_CURRENCY = 'INR';
 
 export async function createExpense(user: AuthUser, body: unknown) {
   const parsed = createSchema.safeParse(body);
@@ -38,8 +37,10 @@ export async function createExpense(user: AuthUser, body: unknown) {
       'No active approval policy configured. An admin must create or activate a policy under "Policies" before expenses can be created.'
     );
   }
-  const baseAmount = convert(parsed.data.amount, parsed.data.currency, BASE_CURRENCY);
-  const rate = fxRate(parsed.data.currency, BASE_CURRENCY);
+  // Convert into the org's base/reporting currency (what base_amount is stored in).
+  const baseCurrency = await orgRepo.getBaseCurrency(user.org_id);
+  const baseAmount = convert(parsed.data.amount, parsed.data.currency, baseCurrency);
+  const rate = fxRate(parsed.data.currency, baseCurrency);
 
   const expense = await repo.insertExpense({
     id: randomUUID(),
@@ -123,7 +124,8 @@ export async function editExpense(user: AuthUser, id: string, body: unknown) {
       throw Errors.unprocessable(`Unsupported currency: ${currency}`);
     }
     const amount = parsed.data.amount ?? Number(expense.amount);
-    const baseAmount = convert(amount, currency, BASE_CURRENCY);
+    const baseCurrency = await orgRepo.getBaseCurrency(user.org_id);
+    const baseAmount = convert(amount, currency, baseCurrency);
 
     const updated = await repo.updateFields(client, user.org_id, id, {
       category: parsed.data.category,
@@ -131,7 +133,7 @@ export async function editExpense(user: AuthUser, id: string, body: unknown) {
       amount,
       currency,
       base_amount: baseAmount,
-      fx_rate: fxRate(currency, BASE_CURRENCY)
+      fx_rate: fxRate(currency, baseCurrency)
     });
 
     // Re-evaluate the chain if amount changed while in review.

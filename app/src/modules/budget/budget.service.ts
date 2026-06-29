@@ -42,7 +42,10 @@ const createSchema = z.object({
 export async function createBudget(orgId: string, body: unknown) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) throw Errors.badRequest('Invalid budget', parsed.error.flatten());
-  return repo.insertBudget({
+  if (parsed.data.scope === 'user' && !parsed.data.userId) {
+    throw Errors.badRequest('A user budget requires a userId');
+  }
+  return repo.upsertBudget({
     org_id: orgId,
     user_id: parsed.data.userId ?? null,
     scope: parsed.data.scope,
@@ -54,6 +57,11 @@ export async function createBudget(orgId: string, body: unknown) {
 
 export async function listBudgets(orgId: string) {
   return repo.listBudgets(orgId);
+}
+
+/** Current-month spend per user (for the admin Budgets screen). */
+export async function monthlySpend(orgId: string) {
+  return repo.monthlySpendByUser(orgId, windowStart('monthly'));
 }
 
 function windowStart(period: 'daily' | 'monthly'): Date {

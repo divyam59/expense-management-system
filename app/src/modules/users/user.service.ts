@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import * as repo from './user.repo';
+import * as orgRepo from '../orgs/org.repo';
 import { hashPassword, verifyPassword } from '../../auth/password';
 import { signAccessToken } from '../../auth/jwt';
 import {
@@ -30,7 +31,8 @@ export async function login(email: string, password: string) {
   return {
     accessToken: signAccessToken(auth),
     refreshToken: await issueRefreshToken(auth),
-    user: sanitize(user)
+    user: sanitize(user),
+    organization: await orgRepo.getOrgById(user.org_id)
   };
 }
 
@@ -43,7 +45,12 @@ export async function refresh(rawToken: string) {
     role: user.role,
     email: user.email
   };
-  return { accessToken: signAccessToken(auth), refreshToken, user: sanitize(user) };
+  return {
+    accessToken: signAccessToken(auth),
+    refreshToken,
+    user: sanitize(user),
+    organization: await orgRepo.getOrgById(user.org_id)
+  };
 }
 
 /** Revoke a refresh token (logout). */
