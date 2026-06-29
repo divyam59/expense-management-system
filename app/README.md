@@ -56,6 +56,9 @@ npm run dev                   # starts http://localhost:4000
 
 Open the UI at **http://localhost:4000/**
 
+> **On Windows?** See the step-by-step [Windows setup guide](../docs/WINDOWS-SETUP.md)
+> (PowerShell, PostgreSQL on Windows, PATH tips, and troubleshooting).
+
 ## 3. Sample data & logins (password: `password123`)
 
 Org **Acme Corp**:
