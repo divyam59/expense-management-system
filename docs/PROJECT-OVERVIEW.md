@@ -17,20 +17,22 @@ screenshot-by-screenshot API + UI reference, see
 project-ems/
   app/                 the application (Node + TypeScript + Express + Postgres)
     src/               source (see "Code layout" below)
-    tests/             128 unit + integration tests (run against real Postgres)
+    tests/             132 unit + integration tests (run against real Postgres)
     public/            single-page UI (vanilla JS + Chart.js)
     scripts/           UI screenshot + PDF generation helpers
     README.md          how to set up, run, test; API table; caveats
   docs/
     PROJECT-OVERVIEW.md      this file
     README.md                copy of the app README for convenience
+    WINDOWS-SETUP.md         step-by-step Windows (PowerShell) setup guide
     technical-documentation.pdf   full API reference + UI walkthrough (images inline)
+    tech_docs/               design & NFR deep-dives (level-1 → level-2.4, AI-FEATURES)
   .github/workflows/   CI — type-check + full test suite on every push / PR
 ```
 
-Design iteration docs (level-1 → level-2.2), the technical-doc markdown source,
-the screenshots, and the original brief are archived in
-`self-projects/docs/` to keep this folder clean.
+Design-iteration & deep-dive docs (level-1 → level-2.4, plus `AI-FEATURES.md`)
+live in `docs/tech_docs/`. The technical-doc markdown source, the screenshots,
+and the original brief are kept in `self-projects/docs/`.
 
 ---
 
@@ -43,10 +45,10 @@ the screenshots, and the original brief are archived in
 - **Configurable approval workflow** — data-driven policy (amount range → ordered approver roles), **versioned and snapshotted at submit** so in-flight expenses are immune to later policy edits. **Stages run sequentially** (the next approver is notified only once the previous level approves; a rejection ends the chain).
 - **Single active policy + categories** — exactly one approval policy is active per org (create/activate auto-deactivates the rest, built via a visual rule builder — no JSON); admins manage the org's expense-category list that drives the expense form dropdown.
 - **Safe approver routing** — an expense never routes to its own author; if no other eligible approver exists for a level, submission is blocked. Expenses can't be created at all until the org has an active policy.
-- **User lifecycle** — admins add and **deactivate/reactivate** users (can't deactivate yourself or the last active admin); inactive users can't log in or be assigned as approvers.
+- **User lifecycle** — admins add and **deactivate/reactivate** users (can't deactivate yourself or the last active admin); inactive users can't log in or be assigned as approvers; a user's **manager can be (re)assigned or cleared** after creation.
 - **Concurrency-safe decisions** — every state transition takes a `SELECT … FOR UPDATE` row lock; idempotency keys dedupe retries.
-- **Budgets** — per-user / per-org daily & monthly limits enforced at submit.
-- **Multi-currency** — convert to base currency, store the `fx_rate` (static rates).
+- **Budgets** — **per-person** (with org-level fallback) daily & monthly limits enforced at submit; an admin **Budgets** screen sets each user's monthly limit and shows current spend + utilization.
+- **Multi-currency** — each org picks a **base currency at signup**; expenses convert into it and store the `fx_rate` (static rates); the UI formats all amounts in the org currency.
 - **Immutable audit trail** — every change written append-only in the *same transaction* as the change.
 - **Notifications** — in-app, generated on workflow events.
 - **Observability** — `/metrics` (Prometheus) + analytics dashboard (spend, status, category, SLA, audit volume).
@@ -124,9 +126,9 @@ cd app
 npm install
 cp .env.example .env
 createdb ems
-npm run setup     # migrate + seed sample data
+npm run setup     # migrate + seed sample data (or: npm run seed:minimal for a clean slate)
 npm run dev       # http://localhost:4000
-npm test          # 128 tests against ems_test (also enforced in CI)
+npm test          # 132 tests against ems_test (also enforced in CI)
 ```
 
 Full setup, sample logins, API table and caveats are in

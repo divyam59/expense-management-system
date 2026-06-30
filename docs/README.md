@@ -26,7 +26,7 @@ what is stubbed or documented as the production path.
 | Concurrency (approve/reject) | ✅ Real | `SELECT … FOR UPDATE` serializes transitions (§7) |
 | Idempotency | ✅ Real | Keyed dedupe of retried money/state actions |
 | Audit trail | ✅ Real | Append-only, written in the same txn as the change |
-| Multi-currency | ⚠️ Partial | Conversion + stored `fx_rate` real; **FX rates are static** |
+| Multi-currency | ⚠️ Partial | Per-org **base currency** (chosen at signup); expenses convert into it + store `fx_rate`; UI formats amounts in it. **FX rates are static** |
 | Bill uploads (image/PDF) | ✅ Real | Multipart upload → bytes persisted via a storage driver; metadata in Postgres; authenticated, tenant-scoped download |
 | Object storage backend | ⚙️ Local now / S3 documented | `LocalDiskStorage` is the default driver; `BlobStorage` interface is ready to swap in S3 |
 | S3 presign (direct-to-bucket) | ❌ Mocked | `/attachments/presign` returns a fake URL — the documented production alternative to API-proxied uploads |
@@ -55,6 +55,12 @@ npm run dev                   # starts http://localhost:4000
 ```
 
 Open the UI at **http://localhost:4000/**
+
+> For a **clean slate** (one org, one user per role, no demo data) run
+> `npm run seed:minimal` instead of `npm run setup`.
+
+> **On Windows?** See the step-by-step [Windows setup guide](../docs/WINDOWS-SETUP.md)
+> (PowerShell, PostgreSQL on Windows, PATH tips, and troubleshooting).
 
 ## 3. Sample data & logins (password: `password123`)
 
@@ -85,9 +91,10 @@ Seeded approval policy (Acme):
 
 ### A) Via the UI (easiest)
 0. (Optional) **Onboard a new company:** on the login screen click **"Create an
-   organization"** → fill org + admin details → you're logged in as that org's
-   admin with a default policy ready. Then use the **Users** tab to add
-   managers/employees. (Existing seed orgs already have users.)
+   organization"** → fill org + admin details (incl. the org's **base currency**)
+   → you're logged in as that org's admin with a default policy ready. Then use
+   the **Users** tab to add managers/employees (and assign each one a manager).
+   (Existing seed orgs already have users.)
 1. Login as **Riya (employee)** → create an expense (e.g. ₹3,000) → open it → **Submit**.
 2. Login as **Amit (manager)** → **Approvals** tab → **Approve**.
 3. Create a ₹20,000 expense as Riya → submit → manager approves → **Neha (finance)** approves → status `approved`.
@@ -97,6 +104,9 @@ Seeded approval policy (Acme):
    (image or PDF) before clicking **Create draft** — it's uploaded with the
    draft. You can also add/view bills later from an expense's **Bills** tab
    (thumbnail + **View** to preview). (Seed data already attaches a sample bill.)
+7. **(Admin) Budgets:** open the **Budgets** tab → set a **per-person** monthly
+   limit for a user → have that user submit an expense over the limit → it's
+   **blocked (422)**. All amounts on this screen show in the org's base currency.
 
 ### B) Via curl
 ```bash
@@ -128,7 +138,7 @@ npm test          # run all tests (uses the ems_test database)
 npm run test:cov  # run with coverage report
 npm run test:watch
 ```
-- **128 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
+- **132 tests**, all passing. Measured coverage: **~94% statements, ~96% lines,
   ~94% functions, ~72% branches**. High coverage on the core flows; the
   uncovered branches are mostly defensive guards (null fallbacks, unreachable
   error paths) — branch % is deliberately not chased to 100%.
@@ -136,8 +146,9 @@ npm run test:watch
   in-memory implementation. The build fails if coverage drops below thresholds
   (statements/functions/lines 90%, branches 70%).
 - **Regression policy:** every user-reported bug gets a dedicated test
-  (`tests/integration/ui-fixes.test.ts`, `policy-categories.test.ts`, and
-  additions to `expenses.test.ts` / `users.test.ts`). **CI**
+  (`tests/integration/ui-fixes.test.ts`, `policy-categories.test.ts`,
+  `currency-budget.test.ts`, and additions to `expenses.test.ts` /
+  `users.test.ts`). **CI**
   (`.github/workflows/ci.yml`) runs the type-check + full suite on every push and
   PR to `main`, so a regression can't merge.
 
@@ -168,15 +179,16 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | GET | `/expenses/:id/history` | owner/mgr/finance | Audit trail |
 | POST | `/expenses/:id/attachments` | requester | **Upload a bill** (multipart `file`; image or PDF, ≤5MB) while editable |
 | GET | `/expenses/:id/attachments` | owner/mgr/finance | List a bill's metadata for an expense |
-| GET | `/attachments/:id` | owner/mgr/finance | Download/preview a bill (authenticated, tenant-scoped) |
-| GET | `/approvals/pending` | expense:approve | My approval queue |
+| GET | `/attachments/:id` | owner/mgr/finance/assigned approver | Download/preview a bill (authenticated, tenant-scoped) |
+| GET | `/approvals/pending` | expense:approve | My approval queue (rows include bill thumbnail info) |
 | POST | `/attachments/presign` | any | Mock S3 presigned URL (documented direct-to-bucket path) |
 | GET/POST/PATCH/DELETE | `/policies` | policy:manage (read: analytics:view) | Approval policy CRUD. **Only one policy is active per org** — create/activate auto-deactivates the rest; duplicate names → 409; the active policy can't be deleted (400) |
 | GET | `/categories` | any | List the org's active expense categories |
 | POST/DELETE | `/categories` | policy:manage | Add / soft-deactivate an expense category (duplicate → 409) |
-| GET/POST | `/budgets` | budget:manage (read: analytics:view) | Budgets |
+| GET/POST | `/budgets` | budget:manage (read: analytics:view) | List / set budgets. **Per-user upsert** — re-setting a person's monthly limit updates the same row (no duplicates) |
+| GET | `/budgets/spend` | budget:manage | Per-user current-month spend (powers the admin **Budgets** screen) |
 | GET | `/budgets/utilization` | any | Current user's budget utilization |
-| GET/POST/PATCH | `/users` | user:manage | User management. `PATCH …{isActive:false}` deactivates a user (can't deactivate yourself or the last active admin); inactive users can't log in or be assigned as approvers |
+| GET/POST/PATCH | `/users` | user:manage | User management. `PATCH …{isActive:false}` deactivates a user (can't deactivate yourself or the last active admin); inactive users can't log in or be assigned as approvers. `PATCH …{managerId}` (re)assigns or clears a user's manager after creation |
 | GET | `/notifications` / POST `/:id/read` | any | In-app notifications |
 | GET | `/analytics/summary\|spend\|by-status\|by-category\|audit-volume` | analytics:view | Dashboard data |
 
@@ -200,18 +212,20 @@ All endpoints require `Authorization: Bearer <token>` except `/auth/*`,
 | Wrong-approver block | Only assigned approver can act | ✅ | `expenses.test.ts`, `branches.test.ts` |
 | Reject reason required | Reject without reason → 400 | ✅ | `expenses.test.ts` |
 | Idempotency | Repeat approve w/ key = no double-apply | ✅ | `expenses.test.ts › idempotent` |
-| Budget enforcement | Over daily/monthly limit → 422 | ✅ | `expenses.test.ts`, `edge.test.ts` |
+| Budget enforcement | **Per-person** daily/monthly limit → 422 over (org budget = fallback) | ✅ | `expenses.test.ts`, `edge.test.ts`, `currency-budget.test.ts` |
+| Admin budgets screen | Admin sets per-user monthly limits; shows spend + utilization | ✅ | `currency-budget.test.ts` |
 | Chain re-eval on edit | Amount crosses threshold → new chain | ✅ | `expenses.test.ts › re-evaluates` |
-| Multi-currency | Convert to base + store fx_rate | ✅ | `currency.test.ts`, `expenses.test.ts` |
+| Multi-currency | Convert to the **org base currency** (chosen at signup) + store fx_rate; UI formats in it | ✅ | `currency.test.ts`, `currency-budget.test.ts`, `expenses.test.ts` |
 | Audit trail | Every change logged immutably, in-txn | ✅ | `misc.test.ts › audit` |
 | Audit S3 shipping | Only ships when flag enabled | ✅ | `misc.test.ts › ships audit` |
 | Notifications | Generated on workflow events | ✅ | `misc.test.ts › notifications` |
-| Bill uploads | Upload image/PDF, list, download; type/size/permission enforced | ✅ | `attachments.test.ts` |
+| Bill uploads | Upload image/PDF, list, download; type/size/permission enforced; bill shown on the approver queue and viewable by the assigned approver | ✅ | `attachments.test.ts` |
 | S3 presign (mock) | Mock presigned URL | ✅ | `misc.test.ts › attachments` |
 | Policy CRUD + validation | Bad ranges → 422 | ✅ | `policy.test.ts`, `branches.test.ts` |
 | Single active policy | One active policy/org; create/activate deactivates others; dup name → 409; active can't be deleted | ✅ | `policy-categories.test.ts` |
 | Expense categories | Admin-managed per-org categories (UI dropdown); dup → 409 | ✅ | `policy-categories.test.ts` |
 | User deactivation | Admin deactivates/reactivates users; self & last-admin guarded | ✅ | `users.test.ts` |
+| Manager assignment | Admin assigns / changes / clears a user's manager after creation (inline in Users) | ✅ | `users.test.ts` |
 | Analytics | Summary + breakdowns + cache | ✅ | `analytics.test.ts`, `branches.test.ts` |
 | Metrics | Prometheus `/metrics` | ✅ | `metrics.test.ts`, `auth.test.ts` |
 
